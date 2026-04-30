@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def cluster_markers(adata: ad.AnnData, groupby: str = "leiden", method: str = "wilcoxon") -> pd.DataFrame:
     """Find markers for each cluster vs the rest."""
-    sc.tl.rank_genes_groups(adata, groupby=groupby, method=method, use_raw=False)
+    sc.tl.rank_genes_groups(adata, groupby=groupby, method=method, use_raw=True)
     return _rank_genes_to_df(adata)
 
 
@@ -37,7 +37,7 @@ def condition_de(
     """Per-cluster DE between conditions (bin-level; fast exploratory view)."""
     frames = []
     if cluster_key is None or cluster_key not in adata.obs:
-        sc.tl.rank_genes_groups(adata, groupby=groupby, reference=reference, method=method, use_raw=False)
+        sc.tl.rank_genes_groups(adata, groupby=groupby, reference=reference, method=method, use_raw=True)
         df = _rank_genes_to_df(adata)
         df["cluster"] = "all"
         return df
@@ -46,7 +46,7 @@ def condition_de(
         sub = adata[adata.obs[cluster_key] == c]
         if sub.obs[groupby].nunique() < 2:
             continue
-        sc.tl.rank_genes_groups(sub, groupby=groupby, reference=reference, method=method, use_raw=False)
+        sc.tl.rank_genes_groups(sub, groupby=groupby, reference=reference, method=method, use_raw=True)
         df = _rank_genes_to_df(sub)
         df["cluster"] = str(c)
         frames.append(df)
@@ -145,6 +145,7 @@ def pseudobulk_de(
         sub = pb2[pb2.obs[cluster_key] == c]
         if sub.obs[condition_key].nunique() < 2:
             continue
+        # use_raw=False here: pb2 carries log-CPM directly in .X and has no .raw.
         sc.tl.rank_genes_groups(
             sub, groupby=condition_key, reference=reference, method="wilcoxon", use_raw=False
         )

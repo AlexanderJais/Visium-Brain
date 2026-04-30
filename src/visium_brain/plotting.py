@@ -93,7 +93,12 @@ def save_top_de_heatmap(
     top = [g for g in top if g in adata.var_names]
     if not top:
         return None
-    sc.pl.dotplot(adata, var_names=top, groupby=groupby, standard_scale="var", show=False)
+    # use_raw=True so the dotplot reflects log1p expression, not the
+    # scaled values left in .X by sc.pp.scale.
+    sc.pl.dotplot(
+        adata, var_names=top, groupby=groupby, standard_scale="var",
+        use_raw=True, show=False,
+    )
     path = out_dir / f"de_top{n_top}_dotplot.png"
     plt.savefig(path, dpi=dpi, bbox_inches="tight")
     plt.close()

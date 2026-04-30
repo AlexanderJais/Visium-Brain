@@ -228,6 +228,71 @@ def test_export_marker_tables(tmp_path):
     assert yaml_path.exists()
 
 
+def test_log1p_preserved_in_raw_and_de_uses_it():
+    """Regression for B1: ``sc.pp.scale`` must not contaminate the values
+    DE / marker scoring see. After preprocessing:
+
+    * ``adata.raw.X`` holds log1p (small magnitudes, non-negative).
+    * ``adata.X`` for HVGs has been z-scored (clipped to ``scale_max_value``).
+    * ``rank_genes_groups(... use_raw=True)`` recovers the planted
+      treatment effect (the synthetic adata bumps genes 2..9 up in the
+      'treated' samples).
+    """
+    from visium_brain import differential, preprocessing, qc
+
+    adata = _make_synthetic_adata(n_per_sample=200, n_genes=300)
+    cfg = {
+        "project": {"random_seed": 0},
+        "qc": {
+            "mito_prefix": "mt-", "hb_prefix": "Hb[ab]-",
+            "min_counts_per_bin": 1, "min_genes_per_bin": 1,
+            "max_pct_mito": 100.0, "min_cells_per_gene": 1,
+        },
+        "preprocessing": {
+            "target_sum": 1e4, "log1p": True,
+            "n_top_hvgs": 100, "hvg_flavor": "seurat_v3",
+            "scale_max_value": 10.0, "n_pcs": 10,
+        },
+        "integration": {"batch_key": "sample_id"},
+    }
+    adata, _ = qc.run(adata, cfg)
+    adata = preprocessing.run(adata, cfg)
+
+    # 1. .raw populated with log1p (non-negative, modest magnitudes).
+    assert adata.raw is not None, "preprocessing must snapshot log1p into adata.raw"
+    raw_X = adata.raw.X.toarray() if sp.issparse(adata.raw.X) else np.asarray(adata.raw.X)
+    assert raw_X.min() >= 0.0
+    assert raw_X.max() < 30.0, f"raw values look unscaled ({raw_X.max():.2f})"
+
+    # 2. .X has been scaled on HVGs (mean ~0, clipped at scale_max_value).
+    hvg = adata.var["highly_variable"].values
+    X_hvg = adata.X[:, hvg]
+    X_hvg = X_hvg.toarray() if sp.issparse(X_hvg) else np.asarray(X_hvg)
+    assert X_hvg.max() <= 10.0 + 1e-6
+    assert abs(X_hvg.mean()) < 1.0, f"HVG mean {X_hvg.mean():.3f} doesn't look z-scored"
+
+    # 3. DE with use_raw=True recovers the planted up-regulation in
+    # treated samples on genes 2..9 (gene_0 / gene_1 are renamed to mt-*
+    # by _make_synthetic_adata so the planted set in raw-name space is
+    # gene_2..gene_9).
+    adata.obs["cell_type"] = pd.Categorical(["A"] * adata.n_obs)
+    de = differential.condition_de(
+        adata, groupby="condition", reference="control",
+        method="wilcoxon", cluster_key="cell_type",
+    )
+    assert not de.empty
+    treated = de[de["group"] == "treated"]
+    planted = {f"gene_{i}" for i in range(2, 10)}
+    top50 = set(treated.sort_values("score", ascending=False)["gene"].head(50))
+    hits = planted & top50
+    assert len(hits) >= 4, (
+        f"Expected most planted genes in top 50 by score; got {sorted(hits)}"
+    )
+    # logFC for those hits should be positive (treated > control).
+    planted_lfc = treated[treated["gene"].isin(planted)]["logfoldchange"]
+    assert (planted_lfc > 0).sum() >= 4
+
+
 def test_pseudobulk_de_shape():
     from visium_brain import differential, preprocessing, qc
 

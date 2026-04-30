@@ -60,7 +60,7 @@ def score_markers(adata: ad.AnnData, panels: dict[str, list[str]] | None = None)
             logger.warning("Skipping %s (only %d/%d markers present)", label, len(present), len(genes))
             continue
         col = f"score_{label}"
-        sc.tl.score_genes(adata, gene_list=present, score_name=col, use_raw=False)
+        sc.tl.score_genes(adata, gene_list=present, score_name=col, use_raw=True)
         score_cols.append(col)
     return score_cols
 
@@ -115,7 +115,7 @@ def export_marker_tables(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sc.tl.rank_genes_groups(adata, groupby=cluster_key, method=method, use_raw=False)
+    sc.tl.rank_genes_groups(adata, groupby=cluster_key, method=method, use_raw=True)
     res = adata.uns["rank_genes_groups"]
     groups = list(res["names"].dtype.names)
     rows = []
