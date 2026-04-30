@@ -7,8 +7,21 @@ from pathlib import Path
 from typing import Any
 
 import anndata as ad
+import pandas as pd
 
-from . import annotation, clustering, differential, integration, io, plotting, preprocessing, qc, spatial
+from . import (
+    annotation,
+    clustering,
+    differential,
+    hierarchical,
+    integration,
+    io,
+    plotting,
+    preprocessing,
+    qc,
+    sketch as sketch_mod,
+    spatial,
+)
 from .utils import get_samples, load_config, output_paths, set_seed, setup_logging
 
 logger = logging.getLogger(__name__)
@@ -36,19 +49,81 @@ def run_preprocess_integrate(cfg: dict[str, Any], adata: ad.AnnData | None = Non
     return adata
 
 
+def _cluster_annotate_with_sketch(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.AnnData:
+    """L1 clustering + annotation done on a leverage-score sketch, then propagated."""
+    sk_cfg = cfg["sketch"]
+    use_rep = adata.uns.get("use_rep", cfg["clustering"].get("use_rep", "X_pca_harmony"))
+    seed = cfg["project"].get("random_seed", 0)
+    n_pcs_l1 = cfg["clustering"].get("l1", {}).get("n_pcs")
+
+    idx = sketch_mod.sketch(
+        adata,
+        fraction=sk_cfg.get("fraction", 0.15),
+        method=sk_cfg.get("method", "leverage_score"),
+        n_pcs=n_pcs_l1,
+        seed=seed,
+    )
+    sub = adata[idx].copy()
+
+    clustering.run_level(sub, cfg, level="l1", use_rep=use_rep, do_umap=True)
+    annotation.run(sub, cfg)
+
+    sketch_mod.propagate_labels(
+        adata, idx, sub.obs["leiden_l1"].values, "leiden_l1",
+        use_rep=use_rep, n_neighbors=sk_cfg.get("k_propagate", 15),
+    )
+    sketch_mod.propagate_labels(
+        adata, idx, sub.obs["cell_type"].astype(str).values, "cell_type_l1",
+        use_rep=use_rep, n_neighbors=sk_cfg.get("k_propagate", 15),
+    )
+    # Keep aliases pointing at L1 for backwards compatibility.
+    adata.obs["leiden"] = adata.obs["leiden_l1"]
+    adata.obs["cell_type"] = adata.obs["cell_type_l1"]
+
+    # Carry the sketch UMAP through so it can still be plotted.
+    if "X_umap" in sub.obsm:
+        import numpy as np
+        full_umap = np.full((adata.n_obs, sub.obsm["X_umap"].shape[1]), np.nan)
+        full_umap[idx] = sub.obsm["X_umap"]
+        adata.obsm["X_umap_sketch"] = full_umap
+    if "cluster_marker_scores" in sub.uns:
+        adata.uns["l1_marker_scores"] = sub.uns["cluster_marker_scores"]
+    return adata
+
+
 def run_cluster_annotate(cfg: dict[str, Any], adata: ad.AnnData | None = None) -> ad.AnnData:
     paths = output_paths(cfg)
     if adata is None:
         adata = io.read_h5ad(paths["integration"] / "adata_integrated.h5ad")
-    adata = clustering.run(adata, cfg, use_rep=adata.uns.get("use_rep"))
-    adata = annotation.run(adata, cfg)
+
+    if cfg.get("sketch", {}).get("enabled", False):
+        adata = _cluster_annotate_with_sketch(adata, cfg)
+    else:
+        adata = clustering.run_level(adata, cfg, level="l1",
+                                     use_rep=adata.uns.get("use_rep"), do_umap=True)
+        adata = annotation.run(adata, cfg)
+        adata.obs["cell_type_l1"] = adata.obs["cell_type"]
+
+    if cfg.get("annotation", {}).get("hierarchical", False):
+        adata = hierarchical.run_l2(adata, cfg)
+        # Promote L2 to be the primary cell_type label downstream.
+        adata.obs["cell_type"] = adata.obs["cell_type_l2"]
+        if "l2_marker_scores" in adata.uns:
+            for l1, df in adata.uns["l2_marker_scores"].items():
+                df.to_csv(paths["annotation"] / f"l2_marker_scores_{l1}.csv", index=False)
+
     plotting.umap_overview(adata, paths["clusters"], dpi=cfg["plotting"]["dpi"])
     plotting.spatial_per_sample(
-        adata, color="cell_type", out_dir=paths["annotation"],
+        adata, color="cell_type_l1", out_dir=paths["annotation"],
         spot_size=cfg["plotting"]["spot_size"], dpi=cfg["plotting"]["dpi"],
     )
+    if "cell_type_l2" in adata.obs:
+        plotting.spatial_per_sample(
+            adata, color="cell_type_l2", out_dir=paths["annotation"],
+            spot_size=cfg["plotting"]["spot_size"], dpi=cfg["plotting"]["dpi"],
+        )
     plotting.spatial_per_sample(
-        adata, color="leiden", out_dir=paths["clusters"],
+        adata, color="leiden_l1", out_dir=paths["clusters"],
         spot_size=cfg["plotting"]["spot_size"], dpi=cfg["plotting"]["dpi"],
     )
     io.write_h5ad(adata, paths["annotation"] / "adata_annotated.h5ad")

@@ -104,6 +104,81 @@ def test_preprocessing_runs():
     assert "counts" in out.layers
 
 
+def test_sketch_and_propagation():
+    """Leverage-score sketch + kNN propagation reproduces labels on a
+    synthetic dataset where each sample is also its own latent cluster."""
+    from visium_brain import preprocessing, qc, sketch as sketch_mod
+
+    adata = _make_synthetic_adata()
+    cfg = {
+        "project": {"random_seed": 0},
+        "qc": {
+            "mito_prefix": "mt-", "hb_prefix": "Hb[ab]-",
+            "min_counts_per_bin": 1, "min_genes_per_bin": 1,
+            "max_pct_mito": 100.0, "min_cells_per_gene": 1,
+        },
+        "preprocessing": {
+            "target_sum": 1e4, "log1p": True,
+            "n_top_hvgs": 50, "hvg_flavor": "seurat_v3",
+            "scale_max_value": 10.0, "n_pcs": 10,
+        },
+        "integration": {"batch_key": "sample_id"},
+    }
+    adata, _ = qc.run(adata, cfg)
+    adata = preprocessing.run(adata, cfg)
+
+    scores = sketch_mod.compute_leverage_scores(adata)
+    assert scores.shape == (adata.n_obs,)
+    assert np.all(scores >= 0)
+
+    idx = sketch_mod.sketch(adata, fraction=0.3, method="leverage_score", seed=0)
+    assert 0 < len(idx) < adata.n_obs
+    assert adata.obs["sketch"].sum() == len(idx)
+
+    # Use sample_id as a stand-in label and verify kNN propagation recovers it.
+    sub_labels = adata.obs["sample_id"].astype(str).values[idx]
+    sketch_mod.propagate_labels(adata, idx, sub_labels, "sample_id_propagated",
+                                 use_rep="X_pca", n_neighbors=5)
+    acc = (adata.obs["sample_id"].astype(str).values
+           == adata.obs["sample_id_propagated"].astype(str).values).mean()
+    assert acc > 0.9
+
+
+def test_hierarchical_l2():
+    from visium_brain import annotation, clustering, hierarchical, preprocessing, qc
+
+    adata = _make_synthetic_adata(n_per_sample=100, n_genes=200)
+    cfg = {
+        "project": {"random_seed": 0},
+        "qc": {
+            "mito_prefix": "mt-", "hb_prefix": "Hb[ab]-",
+            "min_counts_per_bin": 1, "min_genes_per_bin": 1,
+            "max_pct_mito": 100.0, "min_cells_per_gene": 1,
+        },
+        "preprocessing": {
+            "target_sum": 1e4, "log1p": True,
+            "n_top_hvgs": 50, "hvg_flavor": "seurat_v3",
+            "scale_max_value": 10.0, "n_pcs": 10,
+        },
+        "integration": {"batch_key": "sample_id"},
+        "clustering": {
+            "use_rep": "X_pca",
+            "l1": {"n_neighbors": 10, "n_pcs": 10, "resolution": 0.5},
+            "l2": {"n_neighbors": 5, "n_pcs": 10, "resolution": 0.3},
+        },
+        "annotation": {"method": "markers", "l2_min_cells": 20},
+    }
+    adata, _ = qc.run(adata, cfg)
+    adata = preprocessing.run(adata, cfg)
+    adata.uns["use_rep"] = "X_pca"
+    clustering.run_level(adata, cfg, level="l1", use_rep="X_pca", do_umap=False)
+    # Provide a synthetic L1 label so L2 has something to recluster within.
+    adata.obs["cell_type_l1"] = adata.obs["sample_id"].astype(str).astype("category")
+    hierarchical.run_l2(adata, cfg)
+    assert "cell_type_l2" in adata.obs
+    assert adata.obs["cell_type_l2"].nunique() >= adata.obs["cell_type_l1"].nunique()
+
+
 def test_pseudobulk_de_shape():
     from visium_brain import differential, preprocessing, qc
 

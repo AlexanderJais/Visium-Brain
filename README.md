@@ -14,13 +14,32 @@ The pipeline is built on `scanpy` + `anndata` + `squidpy`, with optional
 |---|---|---|---|
 | 1 | Load + QC | `visium_brain.io`, `visium_brain.qc` | `results/01_qc/adata_qc.h5ad`, QC violins, per-sample summary |
 | 2 | Normalize / HVG / PCA / integrate | `preprocessing`, `integration` | `results/03_integration/adata_integrated.h5ad` |
-| 3 | Cluster + annotate | `clustering`, `annotation` | UMAP, spatial maps of clusters and cell types |
+| 3 | Cluster + annotate (sketch + hierarchical) | `sketch`, `clustering`, `annotation`, `hierarchical` | UMAP, spatial maps of L1 and L2 cell types |
 | 4 | Spatial analyses | `spatial` | Moran's I table, neighborhood-enrichment heatmap |
 | 5 | Differential expression | `differential` | Cluster markers, condition DE (bin-level), pseudobulk DE per (sample × cluster) |
 
-Defaults: `square_008um` bins, Harmony integration on `sample_id`, Leiden
-clustering, marker-score cell-type annotation, Wilcoxon DE plus pseudobulk
+Defaults: `square_008um` bins, Harmony integration on `sample_id`,
+**leverage-score sketch (15%) + kNN label propagation** for L1 clustering,
+**hierarchical L1 → L2 annotation** (recluster each L1 cell type at lower
+resolution), marker-score cell-type annotation, Wilcoxon DE plus pseudobulk
 DE using mice as the unit of replication.
+
+### Sketch + hierarchical annotation
+
+The L1 step (clustering + annotation) runs on a leverage-score sketch
+of the data — leverage scores from PCA oversample rare populations, so
+the sketch preserves biological complexity better than uniform
+sampling. Labels are then propagated to all bins via a kNN classifier
+in the integrated PCA / Harmony space. This mirrors Seurat v5's
+`SketchData` / `ProjectData` and the methods in Oh et al., *Nat Genet*
+2025 (https://www.nature.com/articles/s41588-025-02193-3).
+
+After L1, each L1 group is reclustered at lower resolution (default
+25 PCs, resolution 0.1) and rescored against the marker panels;
+results are written to `obs['cell_type_l1']`, `obs['cell_type_l2']`,
+and `obs['leiden_l1']` / `obs['leiden_l2']`. Disable either with
+`sketch.enabled: false` or `annotation.hierarchical: false` in the
+config.
 
 ## Layout
 

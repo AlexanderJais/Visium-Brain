@@ -65,15 +65,38 @@ integration:
     max_iter_harmony: 20
     theta: 2.0
 
+# Sketch-based analysis. Enable for full-scale Visium HD runs (millions
+# of bins). Sketches a representative subset, runs L1 clustering and
+# annotation on it, then propagates labels to the full dataset via kNN
+# in `clustering.use_rep` space. Mirrors Seurat's SketchData/ProjectData
+# and Oh et al., Nat Genet 2025.
+sketch:
+  enabled: true
+  method: leverage_score   # leverage_score (oversamples rare types) | uniform
+  fraction: 0.15
+  k_propagate: 15
+
+# Per-level clustering settings. L1 = broad cell types; L2 = subtypes
+# obtained by reclustering each L1 group at lower resolution.
 clustering:
-  n_neighbors: 15
-  resolution: 0.8
   use_rep: X_pca_harmony   # set to X_pca if integration: none
+  l1:
+    n_neighbors: 15
+    n_pcs: 20
+    resolution: 0.8
+  l2:
+    n_neighbors: 15
+    n_pcs: 25
+    resolution: 0.1
 
 annotation:
   # Marker-based scoring against canonical mouse-brain cell-type markers
   method: markers   # markers | celltypist
   celltypist_model: Mouse_Whole_Brain.pkl
+  # If true, recluster within each L1 label and produce cell_type_l2.
+  hierarchical: true
+  # Skip L2 reclustering for L1 groups smaller than this.
+  l2_min_cells: 200
 
 spatial:
   # Number of spatial neighbors for squidpy graphs / Moran's I
