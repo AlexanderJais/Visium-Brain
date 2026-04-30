@@ -1,10 +1,16 @@
 """Spatial-aware analyses on Visium HD bins.
 
-Uses squidpy to:
-* build a per-sample spatial neighborhood graph,
-* compute Moran's I for spatial autocorrelation of HVGs,
-* compute neighborhood enrichment between annotated cell types / clusters,
-* compute co-occurrence (optional, slower).
+The neighbor graph is built **per sample** and then concatenated, so
+edges never cross between sections. Downstream analyses available
+through ``run()``:
+
+* Moran's I for spatial autocorrelation of the top HVGs
+  (``squidpy.gr.spatial_autocorr``).
+* Neighborhood-enrichment z-scores between annotated cell types
+  (``squidpy.gr.nhood_enrichment``).
+
+Co-occurrence is intentionally not in ``run()`` because at HD scale it's
+slow; call ``squidpy.gr.co_occurrence`` directly if you need it.
 """
 
 from __future__ import annotations

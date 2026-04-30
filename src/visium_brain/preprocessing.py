@@ -1,4 +1,16 @@
-"""Normalization, HVG selection, scaling, and PCA."""
+"""Normalization, HVG selection, scaling, and PCA.
+
+Run order (`preprocessing.run`):
+
+1. Stash raw counts in ``adata.layers['counts']`` (kept for scVI,
+   pseudobulk DE, and ``seurat_v3`` HVG selection).
+2. ``sc.pp.normalize_total`` to ``target_sum`` and ``log1p``.
+3. Highly-variable gene selection. Default flavor ``seurat_v3`` runs on
+   the saved raw counts and is batch-aware via ``integration.batch_key``.
+4. ``sc.pp.scale`` on HVGs only, with ``max_value`` clipping.
+5. ``sc.tl.pca`` on HVGs producing ``obsm['X_pca']`` and
+   ``uns['pca']['variance']`` (consumed by ``sketch``).
+"""
 
 from __future__ import annotations
 

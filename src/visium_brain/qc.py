@@ -1,7 +1,16 @@
 """Quality control for Visium HD bins.
 
-Computes standard scanpy QC metrics, flags mitochondrial / hemoglobin /
-ribosomal genes, and filters bins/genes per the configured thresholds.
+``run()``:
+
+1. Flags mitochondrial (``mt-`` for mouse), hemoglobin (``Hb[ab]-``),
+   and ribosomal (``Rps``/``Rpl``) genes in ``adata.var``.
+2. Computes standard scanpy QC metrics
+   (``sc.pp.calculate_qc_metrics``).
+3. Filters bins on ``min_counts_per_bin`` / ``min_genes_per_bin`` /
+   ``max_pct_mito`` and genes on ``min_cells_per_gene``.
+4. Returns the filtered AnnData and a per-sample summary table
+   (medians of total_counts, n_genes, %mt, %hb, %ribo) reported pre-
+   and post-filtering.
 """
 
 from __future__ import annotations

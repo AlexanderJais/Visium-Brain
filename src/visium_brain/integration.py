@@ -1,9 +1,18 @@
 """Multi-sample integration / batch correction.
 
-Defaults to Harmony on top of PCA, since it's fast, well-suited to a
-small number of samples (4 here), and supported out-of-the-box by
-scanpy's external API. Falls back gracefully if optional backends
-are not installed.
+Choose via ``integration.method`` in the config:
+
+* ``harmony`` (default): fast iterative correction on top of PCA.
+  Stores corrected embedding in ``obsm['X_pca_harmony']``.
+* ``bbknn``: builds a batch-balanced kNN graph directly; downstream
+  clustering skips ``sc.pp.neighbors`` since ``obsp`` is already
+  populated.
+* ``scvi``: probabilistic deep generative integration on raw counts
+  (``layers['counts']``). Requires ``scvi-tools``.
+* ``none``: skip integration; clustering uses raw ``X_pca``.
+
+``run()`` returns the name of the embedding to feed to downstream
+neighbors / clustering steps.
 """
 
 from __future__ import annotations
