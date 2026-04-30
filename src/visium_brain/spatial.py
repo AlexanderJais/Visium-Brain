@@ -1,0 +1,95 @@
+"""Spatial-aware analyses on Visium HD bins.
+
+Uses squidpy to:
+* build a per-sample spatial neighborhood graph,
+* compute Moran's I for spatial autocorrelation of HVGs,
+* compute neighborhood enrichment between annotated cell types / clusters,
+* compute co-occurrence (optional, slower).
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import anndata as ad
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
+def _build_graph_per_sample(adata: ad.AnnData, n_neighbors: int = 6) -> None:
+    """Build a spatial graph per sample, then concatenate into adata.obsp.
+
+    squidpy's `gr.spatial_neighbors` operates on the whole AnnData. To avoid
+    bridging samples, we build per sample and stitch the sparse matrices.
+    """
+    import scipy.sparse as sp
+    import squidpy as sq
+
+    obs_idx = pd.Series(np.arange(adata.n_obs), index=adata.obs_names)
+    rows, cols, vals_d, vals_w = [], [], [], []
+    for sid in adata.obs["sample_id"].cat.categories:
+        mask = (adata.obs["sample_id"] == sid).values
+        sub = adata[mask].copy()
+        if sub.n_obs < n_neighbors + 1:
+            continue
+        sq.gr.spatial_neighbors(sub, coord_type="generic", n_neighs=n_neighbors)
+        local = obs_idx.loc[sub.obs_names].values
+        d = sub.obsp["spatial_distances"].tocoo()
+        w = sub.obsp["spatial_connectivities"].tocoo()
+        rows.append(local[d.row]); cols.append(local[d.col]); vals_d.append(d.data)
+        rows.append(local[w.row]); cols.append(local[w.col]); vals_w.append(w.data)
+
+    n = adata.n_obs
+    distances = sp.csr_matrix(
+        (np.concatenate(vals_d), (np.concatenate(rows[::2]), np.concatenate(cols[::2]))),
+        shape=(n, n),
+    )
+    connectivities = sp.csr_matrix(
+        (np.concatenate(vals_w), (np.concatenate(rows[1::2]), np.concatenate(cols[1::2]))),
+        shape=(n, n),
+    )
+    adata.obsp["spatial_distances"] = distances
+    adata.obsp["spatial_connectivities"] = connectivities
+    adata.uns["spatial_neighbors"] = {
+        "connectivities_key": "spatial_connectivities",
+        "distances_key": "spatial_distances",
+        "params": {"n_neighbors": n_neighbors, "coord_type": "generic"},
+    }
+
+
+def morans_i(adata: ad.AnnData, n_genes: int = 200) -> pd.DataFrame:
+    """Compute Moran's I for the top HVGs."""
+    import squidpy as sq
+
+    if "highly_variable" in adata.var:
+        hv = adata.var.sort_values("highly_variable_rank") if "highly_variable_rank" in adata.var \
+            else adata.var[adata.var["highly_variable"]]
+        genes = hv.index.tolist()[:n_genes]
+    else:
+        genes = adata.var_names[:n_genes].tolist()
+
+    sq.gr.spatial_autocorr(adata, genes=genes, mode="moran")
+    df = adata.uns["moranI"].copy()
+    return df
+
+
+def neighborhood_enrichment(adata: ad.AnnData, cluster_key: str = "cell_type") -> pd.DataFrame:
+    import squidpy as sq
+
+    sq.gr.nhood_enrichment(adata, cluster_key=cluster_key)
+    z = adata.uns[f"{cluster_key}_nhood_enrichment"]["zscore"]
+    cats = adata.obs[cluster_key].cat.categories
+    return pd.DataFrame(z, index=cats, columns=cats)
+
+
+def run(adata: ad.AnnData, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
+    sp_cfg = cfg["spatial"]
+    _build_graph_per_sample(adata, n_neighbors=sp_cfg.get("n_neighbors", 6))
+    out: dict[str, pd.DataFrame] = {}
+    out["morans_i"] = morans_i(adata, n_genes=sp_cfg.get("morans_i_n_genes", 200))
+    if sp_cfg.get("neighborhood_enrichment", True) and "cell_type" in adata.obs:
+        out["neighborhood_enrichment"] = neighborhood_enrichment(adata, "cell_type")
+    return out

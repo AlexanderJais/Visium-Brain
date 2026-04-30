@@ -1,0 +1,95 @@
+# Visium HD mouse-brain pipeline configuration
+#
+# Edit `samples` to point at your Space Ranger outputs. Each sample should
+# point at the top-level Space Ranger output directory; the pipeline expects
+# the standard Visium HD layout:
+#
+#   <sample_dir>/
+#     binned_outputs/
+#       square_002um/
+#       square_008um/   <- used by default (recommended)
+#       square_016um/
+#     spatial/          (top-level spatial folder also used by some readers)
+#
+
+project:
+  name: visium_brain_hd
+  output_dir: results
+  figures_dir: results/figures
+  random_seed: 0
+
+# Bin resolution to load. 8 µm is the recommended starting point for Visium HD.
+# Allowed: square_002um | square_008um | square_016um
+bin_size: square_008um
+
+samples:
+  - sample_id: ctrl_m1
+    condition: control
+    mouse_id: M1
+    path: data/raw/ctrl_m1
+  - sample_id: ctrl_m2
+    condition: control
+    mouse_id: M2
+    path: data/raw/ctrl_m2
+  - sample_id: trt_m3
+    condition: treated
+    mouse_id: M3
+    path: data/raw/trt_m3
+  - sample_id: trt_m4
+    condition: treated
+    mouse_id: M4
+    path: data/raw/trt_m4
+
+qc:
+  # Mouse mitochondrial gene prefix
+  mito_prefix: "mt-"
+  # Mouse hemoglobin gene prefix (optional flagging)
+  hb_prefix: "Hb[ab]-"
+  min_counts_per_bin: 50
+  min_genes_per_bin: 20
+  max_pct_mito: 25.0
+  min_cells_per_gene: 10
+
+preprocessing:
+  target_sum: 10000
+  log1p: true
+  n_top_hvgs: 4000
+  hvg_flavor: seurat_v3   # uses raw counts; robust across samples
+  scale_max_value: 10
+  n_pcs: 50
+
+integration:
+  method: harmony   # harmony | bbknn | none | scvi
+  batch_key: sample_id
+  harmony:
+    max_iter_harmony: 20
+    theta: 2.0
+
+clustering:
+  n_neighbors: 15
+  resolution: 0.8
+  use_rep: X_pca_harmony   # set to X_pca if integration: none
+
+annotation:
+  # Marker-based scoring against canonical mouse-brain cell-type markers
+  method: markers   # markers | celltypist
+  celltypist_model: Mouse_Whole_Brain.pkl
+
+spatial:
+  # Number of spatial neighbors for squidpy graphs / Moran's I
+  n_neighbors: 6
+  morans_i_n_genes: 200   # number of HVGs to test for spatial autocorrelation
+  neighborhood_enrichment: true
+
+differential_expression:
+  groupby: condition
+  reference: control
+  method: wilcoxon
+  # Optional: pseudobulk DE per cluster across mice
+  pseudobulk: true
+  pseudobulk_min_cells: 25
+
+plotting:
+  spot_size: 1.4
+  dpi: 200
+  cmap: viridis
