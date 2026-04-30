@@ -56,6 +56,7 @@ def _cluster_annotate_with_sketch(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.
     use_rep = adata.uns.get("use_rep", cfg["clustering"].get("use_rep", "X_pca_harmony"))
     seed = cfg["project"].get("random_seed", 0)
     n_pcs_l1 = cfg["clustering"].get("l1", {}).get("n_pcs")
+    integ_method = cfg.get("integration", {}).get("method", "harmony").lower()
 
     idx = sketch_mod.sketch(
         adata,
@@ -66,7 +67,20 @@ def _cluster_annotate_with_sketch(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.
     )
     sub = adata[idx].copy()
 
-    clustering.run_level(sub, cfg, level="l1", use_rep=use_rep, do_umap=True)
+    # BBKNN builds the kNN graph directly (no corrected embedding). The
+    # graph from the full-data run is dropped on slicing, so rebuild it
+    # on the sketch; kNN-classifier propagation later runs in X_pca space.
+    skip_neighbors = False
+    if integ_method == "bbknn":
+        integration.run_bbknn(
+            sub,
+            batch_key=cfg.get("integration", {}).get("batch_key", "sample_id"),
+            n_pcs=cfg["preprocessing"].get("n_pcs", 50),
+        )
+        skip_neighbors = True
+
+    clustering.run_level(sub, cfg, level="l1", use_rep=use_rep, do_umap=True,
+                         skip_neighbors=skip_neighbors)
     annotation.run(sub, cfg)
 
     sketch_mod.propagate_labels(
@@ -100,8 +114,13 @@ def run_cluster_annotate(cfg: dict[str, Any], adata: ad.AnnData | None = None) -
     if cfg.get("sketch", {}).get("enabled", False):
         adata = _cluster_annotate_with_sketch(adata, cfg)
     else:
-        adata = clustering.run_level(adata, cfg, level="l1",
-                                     use_rep=adata.uns.get("use_rep"), do_umap=True)
+        method = cfg.get("integration", {}).get("method", "harmony").lower()
+        adata = clustering.run_level(
+            adata, cfg, level="l1",
+            use_rep=adata.uns.get("use_rep"),
+            do_umap=True,
+            skip_neighbors=(method == "bbknn"),
+        )
         adata = annotation.run(adata, cfg)
         adata.obs["cell_type_l1"] = adata.obs["cell_type"]
 

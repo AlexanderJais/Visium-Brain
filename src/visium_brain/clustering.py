@@ -4,6 +4,15 @@ Supports per-level configuration via ``cfg['clustering']['l1']`` and
 ``cfg['clustering']['l2']`` (number of PCs, neighbors, resolution). If a
 flat ``cfg['clustering']`` block is provided (legacy), it is treated as
 the L1 config.
+
+The neighbors-graph step can be skipped by passing
+``skip_neighbors=True`` to :func:`run_level`. The caller (typically
+``pipeline.run_cluster_annotate``) is responsible for setting this when
+``obsp`` is already populated by an integration step that builds the
+graph directly (BBKNN). This was previously inferred from
+``cfg['integration']['method']`` inside ``run_level`` itself, which
+silently produced an empty graph on the sketch when both BBKNN and the
+sketch path were enabled (BBKNN had only ever run on the full adata).
 """
 
 from __future__ import annotations
@@ -45,19 +54,24 @@ def run_level(
     level: str = "l1",
     use_rep: str | None = None,
     do_umap: bool | None = None,
+    skip_neighbors: bool = False,
 ) -> ad.AnnData:
-    """Build neighbors / (optional) UMAP / Leiden for a single level."""
+    """Build neighbors / (optional) UMAP / Leiden for a single level.
+
+    ``skip_neighbors`` lets the caller declare that ``adata.obsp`` is
+    already populated (e.g. by BBKNN). When ``False`` (default) we
+    always call ``sc.pp.neighbors``.
+    """
     cl_cfg = _level_cfg(cfg, level)
     use_rep = use_rep or cfg["clustering"].get("use_rep", "X_pca_harmony")
     seed = cfg["project"].get("random_seed", 0)
-    method = cfg.get("integration", {}).get("method", "harmony").lower()
 
     n_pcs = cl_cfg.get("n_pcs")
     n_neighbors = cl_cfg.get("n_neighbors", 15)
     resolution = cl_cfg.get("resolution", 0.8)
     leiden_key = f"leiden_{level}"
 
-    if method != "bbknn":  # bbknn already populated obsp
+    if not skip_neighbors:
         rep_key = _slice_rep(adata, use_rep, n_pcs)
         sc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=rep_key, random_state=seed)
 
@@ -84,5 +98,14 @@ def run_level(
 
 
 def run(adata: ad.AnnData, cfg: dict[str, Any], use_rep: str | None = None) -> ad.AnnData:
-    """Backwards-compatible single-level entrypoint (L1 only)."""
-    return run_level(adata, cfg, level="l1", use_rep=use_rep, do_umap=True)
+    """Backwards-compatible single-level entrypoint (L1 only).
+
+    Honors the legacy implicit-skip for BBKNN to keep downstream callers
+    that don't yet pass ``skip_neighbors`` working. New code should call
+    :func:`run_level` directly with an explicit ``skip_neighbors``.
+    """
+    method = cfg.get("integration", {}).get("method", "harmony").lower()
+    return run_level(
+        adata, cfg, level="l1", use_rep=use_rep, do_umap=True,
+        skip_neighbors=(method == "bbknn"),
+    )

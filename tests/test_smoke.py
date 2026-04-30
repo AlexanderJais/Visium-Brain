@@ -228,6 +228,52 @@ def test_export_marker_tables(tmp_path):
     assert yaml_path.exists()
 
 
+def test_clustering_skip_neighbors_explicit():
+    """Regression for B2: ``clustering.run_level`` must build the
+    neighborhood graph based on the explicit ``skip_neighbors``
+    argument, not by reading ``integration.method`` from config.
+
+    Previously the function silently skipped ``sc.pp.neighbors`` when
+    ``cfg['integration']['method'] == 'bbknn'``; combined with the
+    sketch path this produced an empty graph on the sketch (BBKNN had
+    only built obsp on the full adata).
+    """
+    from visium_brain import clustering, preprocessing, qc
+
+    adata = _make_synthetic_adata(n_per_sample=80, n_genes=150)
+    cfg = {
+        "project": {"random_seed": 0},
+        "qc": {
+            "mito_prefix": "mt-", "hb_prefix": "Hb[ab]-",
+            "min_counts_per_bin": 1, "min_genes_per_bin": 1,
+            "max_pct_mito": 100.0, "min_cells_per_gene": 1,
+        },
+        "preprocessing": {
+            "target_sum": 1e4, "log1p": True,
+            "n_top_hvgs": 50, "hvg_flavor": "seurat_v3",
+            "scale_max_value": 10.0, "n_pcs": 10,
+        },
+        # Set integration.method to a value the OLD code path would
+        # interpret as "skip neighbors" -- we want to confirm run_level
+        # ignores this when called with the default skip_neighbors=False.
+        "integration": {"method": "bbknn", "batch_key": "sample_id"},
+        "clustering": {
+            "use_rep": "X_pca",
+            "l1": {"n_neighbors": 5, "n_pcs": 10, "resolution": 0.5},
+        },
+    }
+    adata, _ = qc.run(adata, cfg)
+    adata = preprocessing.run(adata, cfg)
+
+    # Default skip_neighbors=False: must build the graph regardless of
+    # integration.method.
+    clustering.run_level(adata, cfg, level="l1", use_rep="X_pca", do_umap=False)
+    assert "neighbors" in adata.uns
+    assert "connectivities" in adata.obsp
+    assert adata.obsp["connectivities"].nnz > 0
+    assert "leiden_l1" in adata.obs
+
+
 def test_log1p_preserved_in_raw_and_de_uses_it():
     """Regression for B1: ``sc.pp.scale`` must not contaminate the values
     DE / marker scoring see. After preprocessing:
