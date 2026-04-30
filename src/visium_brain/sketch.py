@@ -17,7 +17,6 @@ types). This matches the procedure used in Oh et al., *Nat Genet* 2025
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import anndata as ad
 import numpy as np
@@ -93,10 +92,16 @@ def propagate_labels(
     sketch_idx: np.ndarray,
     sketch_labels: np.ndarray | pd.Series,
     out_key: str,
-    use_rep: str = "X_pca_harmony",
+    use_rep: str,
     n_neighbors: int = 15,
 ) -> None:
-    """Propagate sketch labels to all bins via kNN in ``use_rep`` space."""
+    """Propagate sketch labels to all bins via kNN in ``use_rep`` space.
+
+    ``use_rep`` is required (no default) so the caller has to make an
+    explicit choice -- e.g. ``X_pca_harmony`` when Harmony was the
+    integration method, ``X_scVI`` for scVI, plain ``X_pca`` when
+    integration is ``none`` or ``bbknn``.
+    """
     from sklearn.neighbors import KNeighborsClassifier
 
     if use_rep not in adata.obsm:

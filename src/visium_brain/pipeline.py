@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import anndata as ad
-import pandas as pd
 
 from . import (
     annotation,

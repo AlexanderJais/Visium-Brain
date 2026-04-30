@@ -65,11 +65,15 @@ def ensure_dir(path: str | Path) -> Path:
 def output_paths(cfg: dict[str, Any]) -> dict[str, Path]:
     out = ensure_dir(cfg["project"]["output_dir"])
     figs = ensure_dir(cfg["project"]["figures_dir"])
+    # The preprocessing stage writes its AnnData into 03_integration
+    # (the integrated embedding lives in the same h5ad as the
+    # normalized counts). No separate `02_preprocess/` directory is
+    # created. The numbering is kept stable so existing run outputs
+    # are not orphaned.
     return {
         "out": out,
         "figures": figs,
         "qc": ensure_dir(out / "01_qc"),
-        "preproc": ensure_dir(out / "02_preprocess"),
         "integration": ensure_dir(out / "03_integration"),
         "clusters": ensure_dir(out / "04_clusters"),
         "annotation": ensure_dir(out / "05_annotation"),

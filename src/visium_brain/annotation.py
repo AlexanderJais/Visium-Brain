@@ -1,14 +1,29 @@
 """Cell-type / region annotation for mouse brain Visium HD bins.
 
-Two strategies are supported:
+Three annotation strategies are dispatched from :func:`run` based on
+``cfg['annotation']['method']``:
 
-* `markers`: score canonical mouse brain marker panels with `sc.tl.score_genes`
-  and assign each cluster the label of its highest-scoring panel. This is
-  robust, has no external model dependency, and works well for region/coarse
-  cell-type calls on bin-level Visium HD data.
-* `celltypist`: probabilistic per-bin annotation with a pre-trained
-  CellTypist mouse brain model. Requires the `celltypist` package and a
-  downloaded model file.
+* ``markers`` (default): score canonical mouse-brain marker panels
+  (:data:`MOUSE_BRAIN_MARKERS`) with ``sc.tl.score_genes`` and assign
+  each Leiden cluster the label of its highest-scoring panel. Robust,
+  no external model dependency, works well for broad cell-type / region
+  calls on bin-level data.
+* ``celltypist``: probabilistic per-bin annotation with a pre-trained
+  CellTypist mouse brain model. Requires the optional ``celltypist``
+  package and a downloadable model file.
+* ``manual``: apply a user-edited ``cluster_labels.yaml`` mapping
+  ``{cluster_id: cell_type_name}``. Use :func:`export_marker_tables` to
+  produce the YAML stub + per-cluster ``rank_genes_groups`` table and
+  edit it (typically via ``notebooks/manual_annotation.ipynb``).
+
+In addition, this module exposes:
+
+* :func:`score_markers` and :func:`assign_cluster_labels` -- the
+  primitives behind ``method='markers'``, also reused inside
+  :mod:`visium_brain.hierarchical` for L2.
+* :func:`apply_manual_labels` -- programmatic application of a YAML.
+* :func:`export_marker_tables` -- per-cluster Wilcoxon markers + YAML
+  stub.
 """
 
 from __future__ import annotations
