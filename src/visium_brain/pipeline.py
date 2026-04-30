@@ -19,6 +19,7 @@ from . import (
     plotting,
     preprocessing,
     qc,
+    segmentation as segmentation_mod,
     sketch as sketch_mod,
     spatial,
 )
@@ -162,6 +163,24 @@ def run_differential(cfg: dict[str, Any], adata: ad.AnnData | None = None) -> ad
         )
     io.write_h5ad(adata, paths["de"] / "adata_final.h5ad")
     return adata
+
+
+def run_segmentation(cfg: dict[str, Any]) -> ad.AnnData:
+    """Optional: run bin2cell nuclear segmentation on 2 µm bins per sample."""
+    return segmentation_mod.run(cfg)
+
+
+def export_markers_for_review(cfg: dict[str, Any], adata: ad.AnnData | None = None) -> Path:
+    """Dump per-cluster marker tables and a cluster_labels.yaml stub for
+    manual annotation. Run after stage 3 (clustering) and before
+    re-running with annotation.method=manual."""
+    paths = output_paths(cfg)
+    if adata is None:
+        adata = io.read_h5ad(paths["annotation"] / "adata_annotated.h5ad")
+    cluster_key = "leiden_l1" if "leiden_l1" in adata.obs else "leiden"
+    return annotation.export_marker_tables(
+        adata, out_dir=paths["annotation"], cluster_key=cluster_key
+    )
 
 
 def run_all(config_path: str | Path) -> ad.AnnData:

@@ -117,12 +117,68 @@ pytest -q
 The smoke tests build a synthetic Visium-shaped AnnData and exercise QC,
 preprocessing, and pseudobulk DE without needing real Space Ranger output.
 
+### Manual annotation
+
+For a publication-grade run you'll want to review per-cluster markers
+and assign labels by hand (the auto marker-scoring is a first pass).
+The workflow:
+
+```bash
+# 1. Run through the cluster stage with method=markers (auto)
+visium-brain cluster
+
+# 2. Dump markers + a cluster_labels.yaml stub for review
+visium-brain export-markers
+# -> results/05_annotation/markers_leiden_l1.csv
+# -> results/05_annotation/cluster_labels.yaml   (cluster -> "TBD")
+
+# 3. Open notebooks/manual_annotation.ipynb, inspect markers & spatial maps,
+#    and edit cluster_labels.yaml with cell-type names.
+
+# 4. Point the config at it and re-run:
+#    annotation.method: manual
+#    annotation.manual_labels_l1: results/05_annotation/cluster_labels.yaml
+visium-brain cluster
+```
+
+L2 hierarchical reclustering then runs on top of the manual L1 labels.
+
+### Nuclear segmentation (2 µm + H&E)
+
+When 8 µm bins under-resolve small cell types (microglia, endothelial),
+enable `segmentation` in the config to aggregate 2 µm bins under
+StarDist-segmented nuclei via `bin2cell`. Requires `pip install bin2cell`
+and a path to each sample's full-resolution H&E TIFF (Space Ranger
+doesn't include this in `binned_outputs/`):
+
+```yaml
+segmentation:
+  enabled: true
+  he_mpp: 0.5
+  stardist_model: 2D_versatile_he
+samples:
+  - sample_id: ctrl_m1
+    path: data/raw/ctrl_m1
+    he_image_path: data/raw/ctrl_m1/he_full.tif
+    ...
+```
+
+Run it as a separate stage:
+
+```bash
+visium-brain segment
+```
+
+The output is a per-sample cell-resolution AnnData under
+`results/segmentation/<sample_id>/adata_cells.h5ad` plus a merged
+`adata_cells_merged.h5ad`.
+
 ## Notes on Visium HD specifics
 
 * **Bin size.** Space Ranger writes 2 µm, 8 µm, and 16 µm binned outputs.
   Start with **8 µm**; it balances resolution with per-bin counts. For
-  cell-resolution work, switch to 2 µm and add nucleus-segmentation
-  aggregation (e.g. `bin2cell`) — out of scope here.
+  cell-resolution work, enable `segmentation` (above) to aggregate 2 µm
+  bins under StarDist-segmented nuclei via `bin2cell`.
 * **Replication.** With 2 mice × 2 conditions, bin-level DE is heavily
   pseudoreplicated. The `pseudobulk_de` step aggregates raw counts per
   (sample × cluster) and tests at the mouse level. With n=2 per group

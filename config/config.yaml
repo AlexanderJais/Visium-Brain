@@ -90,13 +90,30 @@ clustering:
     resolution: 0.1
 
 annotation:
-  # Marker-based scoring against canonical mouse-brain cell-type markers
-  method: markers   # markers | celltypist
+  # markers   = automated marker-score panel (fast, no external models)
+  # celltypist = probabilistic per-bin annotation with a pre-trained model
+  # manual    = apply a user-edited YAML mapping (run `visium-brain export-markers`
+  #             first to produce a stub at results/05_annotation/cluster_labels.yaml)
+  method: markers
   celltypist_model: Mouse_Whole_Brain.pkl
+  manual_labels_l1: null   # path to cluster_labels.yaml when method=manual
   # If true, recluster within each L1 label and produce cell_type_l2.
   hierarchical: true
   # Skip L2 reclustering for L1 groups smaller than this.
   l2_min_cells: 200
+
+# Optional: nuclear-segmentation-based aggregation of 2 µm bins.
+# Requires `bin2cell` (https://github.com/Teichlab/bin2cell) and a path to
+# each sample's full-resolution H&E TIFF (add `he_image_path:` to each
+# sample under `samples:`). Disabled by default.
+segmentation:
+  enabled: false
+  bin_size: square_002um
+  he_mpp: 0.5
+  stardist_model: 2D_versatile_he
+  prob_thresh: 0.01
+  nms_thresh: 0.5
+  output_per_sample: results/segmentation
 
 spatial:
   # Number of spatial neighbors for squidpy graphs / Moran's I

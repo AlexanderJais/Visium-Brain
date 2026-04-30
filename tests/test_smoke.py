@@ -179,6 +179,55 @@ def test_hierarchical_l2():
     assert adata.obs["cell_type_l2"].nunique() >= adata.obs["cell_type_l1"].nunique()
 
 
+def test_manual_label_application(tmp_path):
+    import yaml as _yaml
+
+    from visium_brain import annotation
+
+    adata = _make_synthetic_adata(n_per_sample=50, n_genes=100)
+    adata.obs["leiden_l1"] = pd.Categorical(
+        np.array(["0", "1"])[(np.arange(adata.n_obs) % 2)]
+    )
+    mapping = tmp_path / "labels.yaml"
+    with open(mapping, "w") as fh:
+        _yaml.safe_dump(
+            {"cluster_key": "leiden_l1", "labels": {"0": "TypeA", "1": "TypeB"}}, fh
+        )
+    annotation.apply_manual_labels(adata, mapping, out_key="cell_type_manual")
+    assert set(adata.obs["cell_type_manual"].astype(str)) == {"TypeA", "TypeB"}
+
+
+def test_export_marker_tables(tmp_path):
+    from visium_brain import annotation, clustering, preprocessing, qc
+
+    adata = _make_synthetic_adata(n_per_sample=80, n_genes=150)
+    cfg = {
+        "project": {"random_seed": 0},
+        "qc": {
+            "mito_prefix": "mt-", "hb_prefix": "Hb[ab]-",
+            "min_counts_per_bin": 1, "min_genes_per_bin": 1,
+            "max_pct_mito": 100.0, "min_cells_per_gene": 1,
+        },
+        "preprocessing": {
+            "target_sum": 1e4, "log1p": True,
+            "n_top_hvgs": 50, "hvg_flavor": "seurat_v3",
+            "scale_max_value": 10.0, "n_pcs": 10,
+        },
+        "integration": {"batch_key": "sample_id"},
+        "clustering": {
+            "use_rep": "X_pca",
+            "l1": {"n_neighbors": 10, "n_pcs": 10, "resolution": 0.5},
+        },
+    }
+    adata, _ = qc.run(adata, cfg)
+    adata = preprocessing.run(adata, cfg)
+    clustering.run_level(adata, cfg, level="l1", use_rep="X_pca", do_umap=False)
+    csv_path = annotation.export_marker_tables(adata, tmp_path, cluster_key="leiden_l1", n_top=5)
+    assert csv_path.exists()
+    yaml_path = tmp_path / "cluster_labels.yaml"
+    assert yaml_path.exists()
+
+
 def test_pseudobulk_de_shape():
     from visium_brain import differential, preprocessing, qc
 

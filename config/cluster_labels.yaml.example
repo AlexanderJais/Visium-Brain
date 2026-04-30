@@ -1,0 +1,24 @@
+# Example manual L1 annotation mapping.
+#
+# Generate the stub for your own data by running:
+#
+#     visium-brain export-markers
+#
+# That writes `results/05_annotation/cluster_labels.yaml` with every
+# Leiden cluster set to "TBD" plus a `markers_leiden_l1.csv` table you
+# review side-by-side. Replace the TBDs with cell-type names, point
+# `annotation.manual_labels_l1` in config.yaml at that file, set
+# `annotation.method: manual`, and re-run the cluster stage.
+
+cluster_key: leiden_l1
+labels:
+  "0": Excitatory_neuron
+  "1": Inhibitory_neuron
+  "2": Astrocyte
+  "3": Oligodendrocyte
+  "4": Microglia
+  "5": Endothelial
+  "6": Choroid_plexus
+  "7": Granule_cell_DG
+  "8": CA1_pyramidal
+  "9": Cortical_L5

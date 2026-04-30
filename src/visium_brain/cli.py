@@ -56,6 +56,20 @@ def de_cmd(cfg):
     pipeline.run_differential(cfg)
 
 
+@main.command("segment")
+@click.pass_obj
+def segment_cmd(cfg):
+    """Run bin2cell nuclear segmentation on 2 µm bins (requires bin2cell + H&E)."""
+    pipeline.run_segmentation(cfg)
+
+
+@main.command("export-markers")
+@click.pass_obj
+def export_markers_cmd(cfg):
+    """Dump per-cluster markers + cluster_labels.yaml stub for manual annotation."""
+    pipeline.export_markers_for_review(cfg)
+
+
 @main.command("all")
 @click.pass_context
 def all_cmd(ctx):

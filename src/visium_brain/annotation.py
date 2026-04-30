@@ -14,12 +14,14 @@ Two strategies are supported:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +98,99 @@ def run_celltypist(adata: ad.AnnData, model: str, out_key: str = "cell_type") ->
     return adata
 
 
+def export_marker_tables(
+    adata: ad.AnnData,
+    out_dir: str | Path,
+    cluster_key: str = "leiden",
+    n_top: int = 25,
+    method: str = "wilcoxon",
+) -> Path:
+    """Compute per-cluster top markers and dump them for manual review.
+
+    Writes:
+      * ``markers_<cluster_key>.csv`` — long-format table of top markers
+      * ``cluster_labels.yaml`` — pre-filled mapping ``cluster_id -> "TBD"``
+        for the user to edit
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    sc.tl.rank_genes_groups(adata, groupby=cluster_key, method=method, use_raw=False)
+    res = adata.uns["rank_genes_groups"]
+    groups = list(res["names"].dtype.names)
+    rows = []
+    for g in groups:
+        for r in range(min(n_top, len(res["names"][g]))):
+            rows.append(
+                {
+                    "cluster": g,
+                    "rank": r + 1,
+                    "gene": res["names"][g][r],
+                    "logfoldchange": float(res["logfoldchanges"][g][r]),
+                    "pval_adj": float(res["pvals_adj"][g][r]),
+                    "score": float(res["scores"][g][r]),
+                }
+            )
+    df = pd.DataFrame(rows)
+    csv_path = out_dir / f"markers_{cluster_key}.csv"
+    df.to_csv(csv_path, index=False)
+
+    label_template = {str(g): "TBD" for g in groups}
+    yaml_path = out_dir / "cluster_labels.yaml"
+    if not yaml_path.exists():
+        with open(yaml_path, "w") as fh:
+            yaml.safe_dump(
+                {"cluster_key": cluster_key, "labels": label_template},
+                fh,
+                sort_keys=False,
+            )
+    logger.info("Exported %d markers x %d clusters -> %s", n_top, len(groups), csv_path)
+    return csv_path
+
+
+def apply_manual_labels(
+    adata: ad.AnnData,
+    mapping_path: str | Path,
+    out_key: str = "cell_type",
+) -> ad.AnnData:
+    """Apply a user-edited ``cluster_labels.yaml`` to an AnnData.
+
+    The YAML must have the form::
+
+        cluster_key: leiden_l1
+        labels:
+          "0": Excitatory_neuron
+          "1": Astrocyte
+          ...
+    """
+    with open(mapping_path) as fh:
+        spec = yaml.safe_load(fh)
+    cluster_key = spec["cluster_key"]
+    labels = {str(k): str(v) for k, v in spec["labels"].items()}
+    if cluster_key not in adata.obs:
+        raise KeyError(f"adata.obs[{cluster_key!r}] not found.")
+
+    series = adata.obs[cluster_key].astype(str).map(labels)
+    if series.isna().any():
+        missing = sorted(set(adata.obs[cluster_key].astype(str)) - set(labels))
+        raise ValueError(f"Manual label mapping is incomplete; missing keys: {missing}")
+    adata.obs[out_key] = pd.Categorical(series.values)
+    logger.info("Applied %d manual labels -> obs['%s']", len(labels), out_key)
+    return adata
+
+
 def run(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.AnnData:
     ann = cfg.get("annotation", {})
     method = ann.get("method", "markers").lower()
     if method == "celltypist":
         return run_celltypist(adata, model=ann.get("celltypist_model", "Mouse_Whole_Brain.pkl"))
+    if method == "manual":
+        mapping = ann.get("manual_labels_l1") or ann.get("manual_labels")
+        if not mapping:
+            raise ValueError(
+                "annotation.method='manual' requires annotation.manual_labels_l1 "
+                "to point at a cluster_labels.yaml."
+            )
+        return apply_manual_labels(adata, mapping, out_key="cell_type")
     score_cols = score_markers(adata)
     return assign_cluster_labels(adata, score_cols=score_cols, cluster_key="leiden")

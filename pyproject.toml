@@ -34,7 +34,8 @@ dependencies = [
 spatialdata = ["spatialdata>=0.2.0", "spatialdata-io>=0.1.5"]
 celltypist = ["celltypist>=1.6.0"]
 scvi = ["scvi-tools>=1.1.0"]
-dev = ["pytest>=7", "ruff>=0.4", "ipykernel"]
+segmentation = ["bin2cell>=0.3.2", "stardist>=0.9.1"]
+dev = ["pytest>=7", "ruff>=0.4", "ipykernel", "jupyter"]
 
 [project.scripts]
 visium-brain = "visium_brain.cli:main"
