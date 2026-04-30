@@ -30,31 +30,48 @@ def _build_graph_per_sample(adata: ad.AnnData, n_neighbors: int = 6) -> None:
 
     squidpy's `gr.spatial_neighbors` operates on the whole AnnData. To avoid
     bridging samples, we build per sample and stitch the sparse matrices.
+
+    Raises ``RuntimeError`` if no sample has enough bins to produce a
+    graph (previously this would surface as a confusing
+    ``np.concatenate([])`` ValueError).
     """
     import scipy.sparse as sp
     import squidpy as sq
 
     obs_idx = pd.Series(np.arange(adata.n_obs), index=adata.obs_names)
-    rows, cols, vals_d, vals_w = [], [], [], []
+    rows_d: list = []; cols_d: list = []; vals_d: list = []
+    rows_w: list = []; cols_w: list = []; vals_w: list = []
+    n_samples_used = 0
     for sid in adata.obs["sample_id"].cat.categories:
         mask = (adata.obs["sample_id"] == sid).values
         sub = adata[mask].copy()
         if sub.n_obs < n_neighbors + 1:
+            logger.warning(
+                "[spatial] %s: %d bins < n_neighbors+1=%d; skipping",
+                sid, sub.n_obs, n_neighbors + 1,
+            )
             continue
         sq.gr.spatial_neighbors(sub, coord_type="generic", n_neighs=n_neighbors)
         local = obs_idx.loc[sub.obs_names].values
         d = sub.obsp["spatial_distances"].tocoo()
         w = sub.obsp["spatial_connectivities"].tocoo()
-        rows.append(local[d.row]); cols.append(local[d.col]); vals_d.append(d.data)
-        rows.append(local[w.row]); cols.append(local[w.col]); vals_w.append(w.data)
+        rows_d.append(local[d.row]); cols_d.append(local[d.col]); vals_d.append(d.data)
+        rows_w.append(local[w.row]); cols_w.append(local[w.col]); vals_w.append(w.data)
+        n_samples_used += 1
+
+    if n_samples_used == 0:
+        raise RuntimeError(
+            f"No sample had enough bins (>= n_neighbors+1 = {n_neighbors + 1}) "
+            f"to build a spatial graph. Lower spatial.n_neighbors or relax QC."
+        )
 
     n = adata.n_obs
     distances = sp.csr_matrix(
-        (np.concatenate(vals_d), (np.concatenate(rows[::2]), np.concatenate(cols[::2]))),
+        (np.concatenate(vals_d), (np.concatenate(rows_d), np.concatenate(cols_d))),
         shape=(n, n),
     )
     connectivities = sp.csr_matrix(
-        (np.concatenate(vals_w), (np.concatenate(rows[1::2]), np.concatenate(cols[1::2]))),
+        (np.concatenate(vals_w), (np.concatenate(rows_w), np.concatenate(cols_w))),
         shape=(n, n),
     )
     adata.obsp["spatial_distances"] = distances

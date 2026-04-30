@@ -80,12 +80,14 @@ def read_all_samples(samples: Iterable[Sample], bin_size: str) -> ad.AnnData:
     adatas = {s.sample_id: read_visium_hd_sample(s, bin_size=bin_size) for s in samples}
     logger.info("Concatenating %d samples", len(adatas))
 
+    # No `label=` here: every per-sample adata already has obs["sample_id"]
+    # set by read_visium_hd_sample, and passing label="sample_id" with the
+    # same name causes a collision (overwrite or ValueError depending on
+    # anndata version).
     merged = ad.concat(
         adatas,
         axis=0,
         join="outer",
-        label="sample_id",
-        keys=list(adatas.keys()),
         index_unique=None,
         merge="unique",
         uns_merge="unique",

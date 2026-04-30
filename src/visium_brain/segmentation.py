@@ -151,9 +151,11 @@ def run(cfg: dict[str, Any]) -> ad.AnnData:
     if not cell_adatas:
         raise RuntimeError("No samples with he_image_path found in config.")
 
+    # See io.read_all_samples: each cell-level adata already has
+    # obs["sample_id"] set, so no `label=` here.
     merged = ad.concat(
-        cell_adatas, axis=0, join="outer", label="sample_id",
-        keys=list(cell_adatas.keys()), index_unique=None, merge="unique",
+        cell_adatas, axis=0, join="outer",
+        index_unique=None, merge="unique",
     )
     merged.write_h5ad(out_dir / "adata_cells_merged.h5ad", compression="gzip")
     logger.info("[seg] merged cell-level AnnData: %s", merged.shape)

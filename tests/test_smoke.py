@@ -228,6 +228,29 @@ def test_export_marker_tables(tmp_path):
     assert yaml_path.exists()
 
 
+def test_spatial_graph_clear_error_when_no_samples_have_enough_bins():
+    """Regression for B3: ``_build_graph_per_sample`` previously raised
+    ``np.concatenate([])`` ValueError when every sample fell below
+    ``n_neighbors+1``; now it raises a RuntimeError naming the cause."""
+    pytest.importorskip("squidpy")
+    from visium_brain import spatial
+
+    rng = np.random.default_rng(0)
+    n_per = 3
+    obs = pd.DataFrame(
+        {"sample_id": pd.Categorical(["a"] * n_per + ["b"] * n_per)},
+        index=[f"bc{i}" for i in range(2 * n_per)],
+    )
+    adata = ad.AnnData(
+        X=sp.csr_matrix(rng.poisson(0.5, size=(2 * n_per, 5)).astype(np.float32)),
+        obs=obs,
+    )
+    adata.obsm["spatial"] = rng.uniform(0, 100, size=(2 * n_per, 2))
+
+    with pytest.raises(RuntimeError, match="No sample had enough bins"):
+        spatial._build_graph_per_sample(adata, n_neighbors=10)
+
+
 def test_clustering_skip_neighbors_explicit():
     """Regression for B2: ``clustering.run_level`` must build the
     neighborhood graph based on the explicit ``skip_neighbors``
