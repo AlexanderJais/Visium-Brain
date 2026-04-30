@@ -128,6 +128,21 @@ differential_expression:
   # Optional: pseudobulk DE per cluster across mice
   pseudobulk: true
   pseudobulk_min_cells: 25
+  # Gate on Wilcoxon p-values: clusters whose smaller condition has
+  # fewer than this many pseudobulks (= mice) get pval / pval_adj
+  # blanked to NaN, with a `low_power=True` flag stamped on every row.
+  # Effect sizes (logfoldchange) are always reported.
+  #
+  # Why 3? The two-sided minimum achievable Wilcoxon p depends only on
+  # group sizes:
+  #   n1 = n2 = 2 -> p_min = 2/C(4,2)  = 0.333  (cannot reach p<0.05)
+  #   n1 = n2 = 3 -> p_min = 2/C(6,3)  = 0.100  (still cannot reach p<0.05)
+  #   n1 = n2 = 4 -> p_min = 2/C(8,4)  = 0.029
+  #
+  # The default 2-mice-per-condition design here always trips this gate;
+  # use logfoldchange for prioritization, and a parametric pseudobulk
+  # model (pyDESeq2 / edgeR via rpy2) for a real significance test.
+  pseudobulk_min_per_group: 3
 
 plotting:
   spot_size: 1.4

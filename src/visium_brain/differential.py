@@ -1,10 +1,37 @@
 """Differential expression: per cluster, per condition, and pseudobulk.
 
-For Visium HD with biological replicates (2 mice per condition here), the
-recommended approach is pseudobulk DE: sum raw counts across bins per
-(sample, cluster), then test condition effects with a negative-binomial /
-Wilcoxon model over mice. We provide both the bin-level wilcoxon (fast,
-exploratory) and the pseudobulk version (statistically valid).
+For Visium HD with biological replicates (2 mice per condition in the
+default design), the recommended approach is pseudobulk DE: sum raw
+counts across bins per (sample, cluster), then test condition effects
+*with mice as the unit of replication*. This module provides:
+
+* :func:`cluster_markers` - Wilcoxon markers per cluster vs the rest
+  (fast, bin-level).
+* :func:`condition_de` - Wilcoxon between conditions per cluster
+  (bin-level; **heavily pseudoreplicated** -- use only for
+  exploration / ranking, never as a significance test).
+* :func:`make_pseudobulk` + :func:`pseudobulk_de` - the
+  replication-correct path.
+
+**Important caveat on `pseudobulk_de` p-values.** The Wilcoxon
+rank-sum test has a hard lower bound on its achievable p-value that
+is determined entirely by group sizes:
+
+    n1 = n2 = 2  -->  two-sided p_min = 2/C(4,2)  = 2/6  ~ 0.333
+    n1 = n2 = 3  -->  two-sided p_min = 2/C(6,3)  = 2/20 = 0.100
+    n1 = n2 = 4  -->  two-sided p_min = 2/C(8,4)  = 2/70 ~ 0.029
+
+With 2 mice per condition, *no* gene -- not even a perfectly separated
+one -- can reach p < 0.05. Reporting p-values in that regime would
+mislead readers. We therefore gate :func:`pseudobulk_de`: if the
+smaller condition has fewer than ``min_per_group`` (default 3)
+pseudobulks for a given cluster, the ``pval`` and ``pval_adj`` columns
+are blanked to ``NaN`` for that cluster, a ``low_power=True`` flag is
+set, and a warning is logged. The effect-size column
+(``logfoldchange``) and the per-cluster pseudobulk counts are always
+populated and remain useful for prioritization. For a real
+significance test in this regime, use a parametric pseudobulk model
+(``pyDESeq2`` or ``edgeR`` via ``rpy2``).
 """
 
 from __future__ import annotations
@@ -125,15 +152,60 @@ def pseudobulk_de(
     cluster_key: str = "cell_type",
     condition_key: str = "condition",
     reference: str = "control",
+    min_per_group: int = 3,
 ) -> pd.DataFrame:
     """Wilcoxon test on log-CPM pseudobulks per cluster across conditions.
 
-    With 2 mice per condition this is severely underpowered for any single
-    test, but it gives effect sizes and ranks that are interpretable across
-    the full transcriptome. For publication-grade DE swap in pyDESeq2 or
-    edgeR via rpy2.
+    Per cluster, builds log-CPM from the (sample, cluster) summed
+    counts in ``pb`` and runs ``sc.tl.rank_genes_groups`` between
+    conditions using the pseudobulks (mice) as the unit of
+    replication.
+
+    The ``min_per_group`` argument gates p-value reporting on
+    statistical power. **Read the module-level docstring before
+    interpreting the output**:
+
+    * If the smaller condition has at least ``min_per_group``
+      pseudobulks for a cluster, the cluster's rows carry usual
+      ``pval`` / ``pval_adj`` along with ``logfoldchange``.
+    * If it has fewer, ``pval`` and ``pval_adj`` are set to ``NaN``
+      and ``low_power=True`` is stamped on every row of that cluster.
+      A warning is logged. Effect sizes (``logfoldchange``) and group
+      sizes (``min_n_per_group``, ``n_pseudobulks``) are always
+      reported.
+
+    The default threshold is 3 because Wilcoxon's two-sided minimum
+    achievable p with n1 = n2 = 2 is 2/C(4,2) = 0.333, with n1 = n2 = 3
+    is 2/C(6,3) = 0.10, and only with n1 = n2 >= 4 can you cross
+    p < 0.05. For a real test in the underpowered regime use
+    ``pyDESeq2`` / ``edgeR`` (via ``rpy2``) on the same pseudobulks.
+
+    Parameters
+    ----------
+    pb
+        Pseudobulk AnnData from :func:`make_pseudobulk` (raw counts in
+        ``.X``).
+    cluster_key, condition_key
+        Columns of ``pb.obs`` defining strata and the test factor.
+    reference
+        Level of ``condition_key`` used as the Wilcoxon reference; the
+        other level becomes the test ``group`` and its
+        ``logfoldchange`` is signed positive when up in the test
+        condition.
+    min_per_group
+        Minimum smaller-group size required to publish p-values. Set
+        to 0 to always report p-values (not recommended for
+        publication; useful for diagnostics).
+
+    Returns
+    -------
+    Long-format DataFrame with columns::
+
+        cluster, group, gene, logfoldchange, pval, pval_adj, score,
+        n_pseudobulks, min_n_per_group, low_power
     """
-    # log-CPM normalize the pseudobulks.
+    # log-CPM normalize the pseudobulks. We work on a fresh AnnData so
+    # the input ``pb`` (raw counts) is untouched and re-usable.
     X = pb.X.astype(float)
     libsize = X.sum(axis=1, keepdims=True)
     libsize[libsize == 0] = 1
@@ -145,13 +217,40 @@ def pseudobulk_de(
         sub = pb2[pb2.obs[cluster_key] == c]
         if sub.obs[condition_key].nunique() < 2:
             continue
-        # use_raw=False here: pb2 carries log-CPM directly in .X and has no .raw.
+        # Per-condition pseudobulk counts in this cluster. The Wilcoxon
+        # achievable minimum p depends only on these two numbers; see
+        # the module docstring for the C(n1+n2, n1) derivation.
+        per_group = sub.obs[condition_key].value_counts()
+        min_n = int(per_group.min())
+
+        # use_raw=False here: pb2 carries log-CPM directly in .X and
+        # has no .raw, so the standard preprocessing-time use_raw=True
+        # convention does NOT apply here.
         sc.tl.rank_genes_groups(
-            sub, groupby=condition_key, reference=reference, method="wilcoxon", use_raw=False
+            sub, groupby=condition_key, reference=reference,
+            method="wilcoxon", use_raw=False,
         )
         df = _rank_genes_to_df(sub)
         df["cluster"] = str(c)
         df["n_pseudobulks"] = sub.n_obs
+        df["min_n_per_group"] = min_n
+        df["low_power"] = bool(min_n < min_per_group)
+
+        if min_n < min_per_group:
+            # Wilcoxon p-values are not informative below the threshold:
+            # the smallest two-sided p achievable with n1 = n2 = min_n
+            # is 2 / C(2*min_n, min_n), which exceeds 0.05 for min_n < 4.
+            # Blank them so a downstream reader cannot mistake the
+            # output for a real significance test, but keep
+            # logfoldchange (effect size) which remains interpretable.
+            df.loc[:, "pval"] = np.nan
+            df.loc[:, "pval_adj"] = np.nan
+            logger.warning(
+                "[pseudobulk_de] cluster=%s: smaller-group n=%d < min_per_group=%d; "
+                "p-values blanked (Wilcoxon cannot reach p<0.05 at this n). "
+                "logfoldchange retained.",
+                c, min_n, min_per_group,
+            )
         frames.append(df)
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
@@ -184,5 +283,6 @@ def run(adata: ad.AnnData, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
             cluster_key=cluster_key,
             condition_key=de_cfg.get("groupby", "condition"),
             reference=de_cfg.get("reference", "control"),
+            min_per_group=de_cfg.get("pseudobulk_min_per_group", 3),
         )
     return out

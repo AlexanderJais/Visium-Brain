@@ -267,12 +267,13 @@ cell-level AnnData.
   small enough for cell-type-scale annotation, large enough for
   third-party tools. For sub-bin-resolution work on small cell types,
   enable `segmentation` to fold 2 µm bins into cells.
-- **Replication.** With 2 mice × 2 conditions, bin-level DE is heavily
-  pseudoreplicated. The `pseudobulk_de` step aggregates raw counts per
-  (sample × cluster) and tests at the mouse level. With n=2 per group
-  treat p-values as exploratory and lean on effect sizes; for
-  publication-grade statistics swap in `pyDESeq2` or `edgeR` (via
-  `rpy2`).
+- **Replication / DE p-values.** See the **Pseudobulk DE: replication
+  caveats** subsection below. With the default 2-mice-per-condition
+  design, the pipeline deliberately blanks Wilcoxon p-values for the
+  pseudobulk DE — they are uninformative at this n — and reports
+  effect sizes only. The blank is explicit (`low_power=True` column)
+  so downstream readers cannot mistake an empty cell for "not
+  significant".
 - **Integration.** Defaults to Harmony on `sample_id` because the
   default design has 4 mice across 2 conditions; the original *Nat Genet*
   paper analyses one source and skips integration. Set
@@ -280,6 +281,91 @@ cell-level AnnData.
   match the paper exactly.
 - **Random seed.** Every stochastic step (sketch, neighbors, UMAP,
   Leiden, scVI) reads `project.random_seed`. Reproducible by default.
+
+---
+
+## Pseudobulk DE: replication caveats
+
+The `differential.pseudobulk_de` stage aggregates raw counts per
+(sample × cluster), log-CPM normalizes the resulting pseudobulks,
+and runs a Wilcoxon rank-sum test between conditions using **mice
+as the unit of replication** (not bins). This is the only DE in the
+pipeline that respects biological replication.
+
+### Why p-values are NaN'd out by default
+
+The Wilcoxon rank-sum test has a hard lower bound on the p-value it
+can produce, set entirely by group sizes. With `n1` and `n2`
+samples in the two conditions, the smallest two-sided p achievable is
+`2 / C(n1 + n2, n1)`:
+
+| `n1 = n2` | Two-sided minimum p | Reaches p < 0.05? |
+|---:|---:|:---:|
+| 2 | 2/6 ≈ 0.333 | no |
+| 3 | 2/20 = 0.100 | no |
+| 4 | 2/70 ≈ 0.029 | yes |
+| 5 | 2/252 ≈ 0.008 | yes |
+
+With the default 2 mice × 2 conditions design, **no gene — not even
+one with perfect separation between conditions — can reach the
+canonical p < 0.05 threshold.** A "p = 0.33" column in a CSV invites
+misreading as "not significant", when in reality the test never had
+the power to find anything.
+
+The pipeline therefore gates p-value reporting on
+`differential_expression.pseudobulk_min_per_group` (default `3`):
+
+- If the smaller condition has at least `min_per_group` pseudobulks
+  for a cluster → `pval` and `pval_adj` are populated normally.
+- If it has fewer → `pval` and `pval_adj` are **`NaN`**, and a
+  `low_power=True` flag is stamped on every row of that cluster. A
+  warning is logged so the gate is visible in the run log.
+
+`logfoldchange`, `n_pseudobulks`, and `min_n_per_group` are always
+populated, so effect-size-driven prioritization continues to work.
+
+### Output columns
+
+`results/07_differential/pseudobulk_de.csv`:
+
+| Column | Always populated? | Notes |
+|---|---|---|
+| `cluster` | ✓ | L1 or L2 cell type |
+| `group` | ✓ | non-reference condition |
+| `gene` | ✓ |  |
+| `logfoldchange` | ✓ | log2 effect size; positive = up in `group` |
+| `score` | ✓ | Wilcoxon U statistic |
+| `n_pseudobulks` | ✓ | total samples in this cluster |
+| `min_n_per_group` | ✓ | size of the smaller condition |
+| `low_power` | ✓ | `True` ⇒ p-values blanked |
+| `pval`, `pval_adj` | only when `low_power=False` | NaN when underpowered |
+
+### What to do if you want p-values
+
+Two options, in increasing order of effort:
+
+1. Add more mice per condition (raise `min_n_per_group` to 4 or
+   higher; ideally 5+). With the same pipeline the p-values will
+   start populating automatically.
+2. Replace the Wilcoxon step with a parametric model:
+   - `pyDESeq2` (a Python port of DESeq2 — works directly on the
+     pseudobulk counts written to `pb` in
+     `differential.make_pseudobulk`).
+   - `edgeR` / `limma-voom` via `rpy2`.
+   Both fit a negative-binomial / variance-shrinkage model that has
+   power even at n = 2, but requires you to take the count matrix
+   from `make_pseudobulk` into a separate analysis step.
+
+### Why not also gate `condition_de` (bin-level)?
+
+The bin-level `condition_de` is *already* statistically wrong because
+it treats each bin as an independent observation, ignoring within-mouse
+correlation (severe pseudoreplication). Its p-values would be misleading
+in any direction (usually wildly anti-conservative). It is provided
+purely for fast exploratory ranking and is named
+`condition_de_binlevel.csv` to make this explicit. **Do not interpret
+its p-values.** Use it to look for candidate genes; confirm with
+pseudobulk effect sizes (and a parametric model when warranted).
 
 ---
 

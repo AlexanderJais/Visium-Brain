@@ -388,4 +388,49 @@ def test_pseudobulk_de_shape():
     de = differential.pseudobulk_de(pb, cluster_key="cell_type")
     assert pb.n_obs == 4  # one pseudobulk per sample × 1 cluster
     assert not de.empty
-    assert {"gene", "pval", "pval_adj", "logfoldchange", "cluster"}.issubset(de.columns)
+    expected_cols = {
+        "gene", "pval", "pval_adj", "logfoldchange", "cluster",
+        "n_pseudobulks", "min_n_per_group", "low_power",
+    }
+    assert expected_cols.issubset(de.columns)
+    # n=2 vs n=2 cannot reach p<0.05 (Wilcoxon two-sided p_min = 1/3);
+    # M1 gate must blank pvals and stamp low_power=True on every row.
+    assert (de["min_n_per_group"] == 2).all()
+    assert de["low_power"].all()
+    assert de["pval"].isna().all()
+    assert de["pval_adj"].isna().all()
+    # Effect sizes are always retained even when low_power is True.
+    assert de["logfoldchange"].notna().all()
+
+
+def test_pseudobulk_de_pvalues_present_when_powered():
+    """Regression for M1: when min_per_group is satisfied, pvals are
+    populated and low_power=False."""
+    from visium_brain import differential
+
+    rng = np.random.default_rng(0)
+    n_per_cond = 4
+    sample_ids = (
+        [f"ctrl_m{i}" for i in range(n_per_cond)]
+        + [f"trt_m{i}" for i in range(n_per_cond)]
+    )
+    conds = ["control"] * n_per_cond + ["treated"] * n_per_cond
+    n_genes = 30
+    counts = rng.poisson(100, size=(2 * n_per_cond, n_genes)).astype(np.float32)
+    # Plant a strong treatment effect on the first 5 genes.
+    counts[n_per_cond:, :5] += rng.poisson(500, size=(n_per_cond, 5)).astype(np.float32)
+    pb = ad.AnnData(
+        X=counts,
+        obs=pd.DataFrame(
+            {"sample_id": sample_ids, "condition": conds, "cell_type": "A"},
+            index=sample_ids,
+        ),
+        var=pd.DataFrame(index=[f"gene_{i}" for i in range(n_genes)]),
+    )
+    de = differential.pseudobulk_de(
+        pb, cluster_key="cell_type", condition_key="condition",
+        reference="control", min_per_group=3,
+    )
+    assert (de["low_power"] == False).all()  # noqa: E712
+    assert de["pval_adj"].notna().all()
+    assert (de["min_n_per_group"] == n_per_cond).all()
