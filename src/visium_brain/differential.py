@@ -277,7 +277,13 @@ def run(adata: ad.AnnData, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     # If hierarchical L1->L2 ran, also dump L1 markers so users get both
     # granularities side by side without having to re-run. cell_type_l1
     # is preserved by run_cluster_annotate even after the L2 promotion.
-    if "cell_type_l1" in adata.obs and "cell_type_l2" in adata.obs:
+    # rank_genes_groups requires >= 2 groups, so guard the degenerate
+    # single-L1 case (e.g. when annotation returned only "Unknown").
+    if (
+        "cell_type_l1" in adata.obs
+        and "cell_type_l2" in adata.obs
+        and adata.obs["cell_type_l1"].nunique() >= 2
+    ):
         out["cluster_markers_l1"] = cluster_markers(
             adata, groupby="cell_type_l1", method=method
         )

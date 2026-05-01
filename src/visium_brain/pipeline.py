@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import anndata as ad
+import numpy as np
 
 from . import (
     annotation,
@@ -116,7 +117,6 @@ def _cluster_annotate_with_sketch(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.
 
     # Carry the sketch UMAP through so it can still be plotted.
     if "X_umap" in sub.obsm:
-        import numpy as np
         full_umap = np.full((adata.n_obs, sub.obsm["X_umap"].shape[1]), np.nan)
         full_umap[idx] = sub.obsm["X_umap"]
         adata.obsm["X_umap_sketch"] = full_umap

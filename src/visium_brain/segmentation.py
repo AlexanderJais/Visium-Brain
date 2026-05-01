@@ -114,6 +114,17 @@ def segment_sample(
     cdata.obs["mouse_id"] = sample.mouse_id
     cdata.obs_names = [f"{sample.sample_id}_cell_{bc}" for bc in cdata.obs_names]
 
+    # Rekey uns["spatial"] under sample_id, mirroring
+    # io.read_visium_hd_sample. b2c.read_visium / sc.read_visium key the
+    # spatial dict by the bin directory name (e.g. "square_002um"), which
+    # collides across samples and prevents per-sample plotting on the
+    # merged cell-level AnnData. The downstream re-attach in run() looks
+    # up by sample.sample_id, so make that the canonical key here.
+    if "spatial" in cdata.uns:
+        old_keys = list(cdata.uns["spatial"].keys())
+        if old_keys and sample.sample_id not in cdata.uns["spatial"]:
+            cdata.uns["spatial"][sample.sample_id] = cdata.uns["spatial"].pop(old_keys[0])
+
     out_h5ad = sample_out / "adata_cells.h5ad"
     cdata.write_h5ad(out_h5ad, compression="gzip")
     logger.info("[seg] %s: %d cells -> %s", sample.sample_id, cdata.n_obs, out_h5ad)
