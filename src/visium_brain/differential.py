@@ -70,7 +70,11 @@ def condition_de(
         return df
 
     for c in adata.obs[cluster_key].cat.categories:
-        sub = adata[adata.obs[cluster_key] == c]
+        # Materialize the slice: sc.tl.rank_genes_groups writes to
+        # sub.uns["rank_genes_groups"], and recent scanpy raises
+        # ImplicitModificationWarning (and on some versions silently
+        # writes to a transient copy) when handed a view.
+        sub = adata[adata.obs[cluster_key] == c].copy()
         if sub.obs[groupby].nunique() < 2:
             continue
         sc.tl.rank_genes_groups(sub, groupby=groupby, reference=reference, method=method, use_raw=True)
