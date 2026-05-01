@@ -101,6 +101,10 @@ def morans_i(adata: ad.AnnData, n_genes: int = 200) -> pd.DataFrame:
 
     sq.gr.spatial_autocorr(adata, genes=genes, mode="moran")
     df = adata.uns["moranI"].copy()
+    # squidpy stores the result with gene names as the index but no
+    # index.name; set it so morans_i.csv has a real "gene" header
+    # instead of an empty leading column.
+    df.index.name = "gene"
     return df
 
 
@@ -110,7 +114,9 @@ def neighborhood_enrichment(adata: ad.AnnData, cluster_key: str = "cell_type") -
     sq.gr.nhood_enrichment(adata, cluster_key=cluster_key)
     z = adata.uns[f"{cluster_key}_nhood_enrichment"]["zscore"]
     cats = adata.obs[cluster_key].cat.categories
-    return pd.DataFrame(z, index=cats, columns=cats)
+    df = pd.DataFrame(z, index=cats, columns=cats)
+    df.index.name = cluster_key
+    return df
 
 
 def run(adata: ad.AnnData, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:

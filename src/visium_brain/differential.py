@@ -55,9 +55,18 @@ logger = logging.getLogger(__name__)
 
 
 def cluster_markers(adata: ad.AnnData, groupby: str = "leiden", method: str = "wilcoxon") -> pd.DataFrame:
-    """Find markers for each cluster vs the rest."""
+    """Find markers for each cluster vs the rest.
+
+    Returns the same column schema as :func:`condition_de`
+    (``cluster, group, gene, logfoldchange, pval, pval_adj, score``)
+    so a single CSV reader can consume both. Here ``cluster`` and
+    ``group`` are equal -- the cluster the marker is *for* -- but
+    keeping the column makes the schemas align.
+    """
     sc.tl.rank_genes_groups(adata, groupby=groupby, method=method, use_raw=True)
-    return _rank_genes_to_df(adata)
+    df = _rank_genes_to_df(adata)
+    df["cluster"] = df["group"]
+    return df
 
 
 def condition_de(
