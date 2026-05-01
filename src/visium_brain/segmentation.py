@@ -157,6 +157,13 @@ def run(cfg: dict[str, Any]) -> ad.AnnData:
         cell_adatas, axis=0, join="outer",
         index_unique=None, merge="unique",
     )
+    # ad.concat drops uns["spatial"]; re-attach so per-sample plotting
+    # of the merged cell-level AnnData (images / scale factors) works,
+    # mirroring io.read_all_samples.
+    merged.uns["spatial"] = {}
+    for sid, a in cell_adatas.items():
+        if "spatial" in a.uns and sid in a.uns["spatial"]:
+            merged.uns["spatial"][sid] = a.uns["spatial"][sid]
     merged.write_h5ad(out_dir / "adata_cells_merged.h5ad", compression="gzip")
     logger.info("[seg] merged cell-level AnnData: %s", merged.shape)
     return merged

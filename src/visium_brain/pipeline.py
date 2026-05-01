@@ -80,16 +80,36 @@ def _cluster_annotate_with_sketch(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.
 
     clustering.run_level(sub, cfg, level="l1", use_rep=use_rep, do_umap=True,
                          skip_neighbors=skip_neighbors)
-    annotation.run(sub, cfg)
+
+    # Manual annotation is keyed by full-adata leiden_l1 (that is what
+    # `visium-brain export-markers` writes into cluster_labels.yaml).
+    # Applying it to the sketch's leiden_l1 would require the YAML's
+    # cluster set to match the sketch's transient categories exactly,
+    # which is fragile across re-runs. Instead, run automated/cell-typist
+    # annotation on the sketch and propagate cell_type, but defer manual
+    # labels until after leiden_l1 has been propagated to the full data.
+    ann_cfg = cfg.get("annotation", {})
+    ann_method = ann_cfg.get("method", "markers").lower()
+    if ann_method != "manual":
+        annotation.run(sub, cfg)
 
     sketch_mod.propagate_labels(
         adata, idx, sub.obs["leiden_l1"].values, "leiden_l1",
         use_rep=use_rep, n_neighbors=sk_cfg.get("k_propagate", 15),
     )
-    sketch_mod.propagate_labels(
-        adata, idx, sub.obs["cell_type"].astype(str).values, "cell_type_l1",
-        use_rep=use_rep, n_neighbors=sk_cfg.get("k_propagate", 15),
-    )
+    if ann_method == "manual":
+        mapping = ann_cfg.get("manual_labels_l1") or ann_cfg.get("manual_labels")
+        if not mapping:
+            raise ValueError(
+                "annotation.method='manual' requires annotation.manual_labels_l1 "
+                "to point at a cluster_labels.yaml."
+            )
+        annotation.apply_manual_labels(adata, mapping, out_key="cell_type_l1")
+    else:
+        sketch_mod.propagate_labels(
+            adata, idx, sub.obs["cell_type"].astype(str).values, "cell_type_l1",
+            use_rep=use_rep, n_neighbors=sk_cfg.get("k_propagate", 15),
+        )
     # Keep aliases pointing at L1 for backwards compatibility.
     adata.obs["leiden"] = adata.obs["leiden_l1"]
     adata.obs["cell_type"] = adata.obs["cell_type_l1"]

@@ -78,6 +78,7 @@ def run_l2(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.AnnData:
         sub.obsm["_l2rep"] = rep
         sc.pp.neighbors(sub, n_neighbors=min(n_neighbors, sub.n_obs - 1),
                         use_rep="_l2rep", random_state=seed)
+        del sub.obsm["_l2rep"]
         sc.tl.leiden(sub, resolution=resolution, random_state=seed, flavor="igraph",
                      n_iterations=2, directed=False, key_added="leiden_l2")
 

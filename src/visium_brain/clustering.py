@@ -74,6 +74,11 @@ def run_level(
     if not skip_neighbors:
         rep_key = _slice_rep(adata, use_rep, n_pcs)
         sc.pp.neighbors(adata, n_neighbors=n_neighbors, use_rep=rep_key, random_state=seed)
+        # neighbors() has stashed the kNN graph in obsp; the sliced rep
+        # is no longer needed and would otherwise persist in every
+        # downstream h5ad as a duplicate of obsm[use_rep].
+        if rep_key != use_rep:
+            del adata.obsm[rep_key]
 
     if do_umap is None:
         do_umap = level == "l1"
