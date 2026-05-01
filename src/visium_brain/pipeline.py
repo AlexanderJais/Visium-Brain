@@ -198,11 +198,22 @@ def run_differential(cfg: dict[str, Any], adata: ad.AnnData | None = None) -> ad
     for name, df in results.items():
         df.to_csv(paths["de"] / f"{name}.csv", index=False)
     if "condition_de_binlevel" in results:
+        # Prefer L1 as the dotplot's row axis when hierarchical L1->L2
+        # has run: cell_type is the L2 label (~30-50 categories) which
+        # makes the dotplot unreadable. cell_type_l1 (~10-15) keeps
+        # rows legible while the gene set still comes from the L2
+        # condition DE in results["condition_de_binlevel"].
+        if "cell_type_l1" in adata.obs and "cell_type_l2" in adata.obs:
+            dotplot_groupby = "cell_type_l1"
+        elif "cell_type" in adata.obs:
+            dotplot_groupby = "cell_type"
+        else:
+            dotplot_groupby = "leiden"
         plotting.save_top_de_heatmap(
             adata,
             results["condition_de_binlevel"],
             paths["de"],
-            groupby="cell_type" if "cell_type" in adata.obs else "leiden",
+            groupby=dotplot_groupby,
             dpi=cfg["plotting"]["dpi"],
         )
     io.write_h5ad(adata, paths["de"] / "adata_final.h5ad")

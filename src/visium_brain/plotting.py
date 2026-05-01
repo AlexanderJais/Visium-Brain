@@ -108,15 +108,28 @@ def save_top_de_heatmap(
     n_top: int = 5,
     groupby: str = "cell_type",
     dpi: int = 200,
+    max_genes: int = 60,
 ) -> Path | None:
+    """Dotplot of the top condition-DE genes per cluster.
+
+    ``max_genes`` caps the number of distinct genes shown. With
+    hierarchical L1->L2 annotation the de_df can carry 30-50 L2
+    clusters; even at ``n_top=5`` that produces 150+ unique genes and
+    the dotplot becomes an unreadable barcode. Genes are taken in
+    cluster order (each cluster contributes its top ``n_top`` ranked by
+    pval_adj asc / score desc, deduplicated against earlier clusters'
+    picks), then the head ``max_genes`` is plotted.
+    """
     if de_df.empty:
         return None
-    top = (
-        de_df.sort_values(["cluster", "pval_adj", "score"], ascending=[True, True, False])
-        .groupby("cluster")
-        .head(n_top)["gene"].unique().tolist()
+    ranked = de_df.sort_values(
+        ["cluster", "pval_adj", "score"], ascending=[True, True, False]
     )
-    top = [g for g in top if g in adata.var_names]
+    top = ranked.groupby("cluster").head(n_top)["gene"]
+    # Deduplicate while preserving rank order (every cluster gets at
+    # least its #1 marker before any cluster gets its #2, then so on).
+    top = top.drop_duplicates().tolist()
+    top = [g for g in top if g in adata.var_names][:max_genes]
     if not top:
         return None
     # use_raw=True so the dotplot reflects log1p expression, not the
