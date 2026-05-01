@@ -15,6 +15,46 @@ import seaborn as sns
 logger = logging.getLogger(__name__)
 
 
+# Cardinality threshold above which we pre-bake a HUSL-spaced palette
+# into adata.uns. Below this, scanpy's default_20 / default_28 already
+# pick visually distinct colors and we leave the choice to scanpy.
+_LARGE_PALETTE_THRESHOLD = 20
+
+
+def _ensure_categorical_palette(adata: ad.AnnData, key: str) -> None:
+    """Ensure ``adata.uns[f'{key}_colors']`` is set to a perceptually
+    uniform palette when the category count would otherwise rely on
+    scanpy's default_102.
+
+    With hierarchical L1->L2 annotation, ``cell_type_l2`` has 30-50
+    alphabetically-sorted categories like ``Excitatory_neuron__Cux2_c0``
+    / ``...__Cux2_c1``. scanpy's default_102 is curated for max
+    distinguishability across the *whole* set of 102 colors, but
+    adjacent positions can still look similar -- and when alphabetical
+    sort puts related subtypes next to each other in the category
+    order, those visually-similar colors land on biologically-similar
+    clusters. A HUSL palette spreads hues evenly across N regardless
+    of order, so adjacent categories are always maximally apart in hue.
+
+    Idempotent: if the colors slot is already populated and matches the
+    cardinality, leave it alone (so a re-plot reuses the same colors).
+    """
+    if key not in adata.obs:
+        return
+    col = adata.obs[key]
+    if not hasattr(col, "cat"):
+        return
+    n = len(col.cat.categories)
+    if n <= _LARGE_PALETTE_THRESHOLD:
+        return
+    palette_key = f"{key}_colors"
+    existing = adata.uns.get(palette_key)
+    if existing is not None and len(existing) == n:
+        return
+    palette = sns.color_palette("husl", n_colors=n).as_hex()
+    adata.uns[palette_key] = list(palette)
+
+
 def qc_violins(adata: ad.AnnData, out_dir: Path, dpi: int = 200) -> Path:
     # Count metrics on log y, percentage metrics on linear y. Visium HD
     # bin total_counts / n_genes_by_counts are heavy-tailed; on linear
@@ -44,6 +84,8 @@ def qc_summary_table(summary, out_dir: Path) -> Path:
 
 def umap_overview(adata: ad.AnnData, out_dir: Path, dpi: int = 200) -> Path:
     keys = [k for k in ["leiden", "cell_type", "condition", "sample_id"] if k in adata.obs]
+    for k in keys:
+        _ensure_categorical_palette(adata, k)
     sc.pl.umap(adata, color=keys, ncols=2, show=False)
     fig = plt.gcf()
     # When the sketch path was used, X_umap is the sketch UMAP NaN-padded
@@ -73,6 +115,11 @@ def spatial_per_sample(
     spot_size: float = 1.4,
     dpi: int = 200,
 ) -> list[Path]:
+    # Pre-bake a HUSL palette on the full adata once. Each per-sample
+    # sub.copy() inherits adata.uns, so every panel uses the SAME
+    # category-to-color mapping -- the same L2 cell type is plotted in
+    # the same color across ctrl_m1, ctrl_m2, trt_m3, trt_m4.
+    _ensure_categorical_palette(adata, color)
     paths = []
     for sid in adata.obs["sample_id"].cat.categories:
         sub = adata[adata.obs["sample_id"] == sid].copy()
