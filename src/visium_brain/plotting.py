@@ -110,6 +110,83 @@ def neighborhood_heatmap(matrix, out_dir: Path, dpi: int = 200, name: str = "nho
     return path
 
 
+def save_pseudobulk_volcano(
+    de_df,
+    out_dir: Path,
+    max_clusters: int = 12,
+    n_label: int = 8,
+    dpi: int = 200,
+) -> Path | None:
+    """Per-cluster volcano-style figure for the pseudobulk DE table.
+
+    Designed to be useful in both regimes:
+
+    * **Powered** (``low_power=False``, p-values populated): standard
+      volcano with ``-log10(pval_adj)`` on y.
+    * **Underpowered** (``low_power=True``, p-values NaN'd by
+      ``pseudobulk_de``): switches y to ``|Wilcoxon U|`` so the panel
+      still has a meaningful "separation" axis. The panel title is
+      tagged ``(low power)`` so a reader cannot mistake the alternate
+      y-axis for a p-value-based volcano.
+
+    Top ``n_label`` genes per cluster (by ``|logfoldchange|``) are
+    labelled; cap at ``max_clusters`` panels so the figure stays
+    readable for hierarchical L2 (30-50 clusters).
+    """
+    if de_df.empty or "logfoldchange" not in de_df.columns:
+        return None
+    # Preserve original cluster order without sorting (dict.fromkeys
+    # is order-preserving in Python 3.7+).
+    clusters = list(dict.fromkeys(de_df["cluster"].tolist()))[:max_clusters]
+    if not clusters:
+        return None
+    ncols = min(3, len(clusters))
+    nrows = (len(clusters) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.5 * nrows), squeeze=False)
+
+    import pandas as _pd
+
+    for ax, c in zip(axes.flat, clusters):
+        sub = de_df[de_df["cluster"] == c]
+        if sub.empty:
+            ax.set_visible(False)
+            continue
+        low_power = bool(sub["low_power"].iloc[0]) if "low_power" in sub.columns else False
+
+        x = sub["logfoldchange"].to_numpy()
+        if not low_power and "pval_adj" in sub.columns and sub["pval_adj"].notna().any():
+            y = -np.log10(sub["pval_adj"].clip(lower=1e-300).to_numpy())
+            ylabel = "-log10 adj. p"
+        else:
+            y = sub["score"].abs().to_numpy()
+            ylabel = "|Wilcoxon U|"
+
+        ax.scatter(x, y, s=8, alpha=0.6, c="steelblue", edgecolors="none")
+        ax.axvline(0, color="k", lw=0.5, alpha=0.3)
+        title = str(c) + (" (low power)" if low_power else "")
+        ax.set_title(title, fontsize=9)
+        ax.set_xlabel("log2 fold-change")
+        ax.set_ylabel(ylabel)
+
+        # Label top |lfc| hits.
+        top_idx = sub["logfoldchange"].abs().nlargest(n_label).index
+        y_series = _pd.Series(y, index=sub.index)
+        for i in top_idx:
+            ax.annotate(
+                str(sub.loc[i, "gene"]),
+                (float(sub.loc[i, "logfoldchange"]), float(y_series.loc[i])),
+                fontsize=6, alpha=0.8,
+            )
+
+    for ax in axes.flat[len(clusters):]:
+        ax.set_visible(False)
+    fig.tight_layout()
+    path = out_dir / "pseudobulk_volcano.png"
+    plt.savefig(path, dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
 def save_top_de_heatmap(
     adata: ad.AnnData,
     de_df,

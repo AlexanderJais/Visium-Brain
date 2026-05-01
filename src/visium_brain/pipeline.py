@@ -216,6 +216,16 @@ def run_differential(cfg: dict[str, Any], adata: ad.AnnData | None = None) -> ad
             groupby=dotplot_groupby,
             dpi=cfg["plotting"]["dpi"],
         )
+    if "pseudobulk_de" in results:
+        # Volcano-style summary of pseudobulk_de. Switches y from
+        # -log10(pval_adj) to |Wilcoxon U| when the cluster is flagged
+        # low_power (the default 2-mice-per-condition design), so the
+        # figure remains useful even with NaN p-values.
+        plotting.save_pseudobulk_volcano(
+            results["pseudobulk_de"],
+            paths["de"],
+            dpi=cfg["plotting"]["dpi"],
+        )
     io.write_h5ad(adata, paths["de"] / "adata_final.h5ad")
     return adata
 

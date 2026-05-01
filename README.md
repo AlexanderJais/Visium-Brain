@@ -160,7 +160,7 @@ visium-brain segment          # bin2cell nuclear segmentation on 2 µm bins
 | 2 | Normalize / HVG / PCA / integrate | `preprocessing`, `integration` | `03_integration/adata_integrated.h5ad` |
 | 3 | Cluster + annotate (sketch + hierarchical) | `sketch`, `clustering`, `annotation`, `hierarchical` | `05_annotation/adata_annotated.h5ad`, UMAP, spatial maps for L1 + L2 |
 | 4 | Spatial analyses | `spatial` | `06_spatial/morans_i.csv`, `nhood_enrichment.png` |
-| 5 | Differential expression | `differential` | `07_differential/cluster_markers.csv`, `cluster_markers_l1.csv` (hierarchical only), `condition_de_binlevel.csv`, `pseudobulk_de.csv` |
+| 5 | Differential expression | `differential` | `07_differential/cluster_markers.csv`, `cluster_markers_l1.csv` (hierarchical only), `condition_de_binlevel.csv`, `pseudobulk_de.csv`, `pseudobulk_volcano.png` |
 
 ```
 results/
@@ -175,7 +175,8 @@ results/
 ├── 07_differential/           adata_final.h5ad,     cluster_markers.csv,
 │                              cluster_markers_l1.csv (when hierarchical),
 │                              condition_de_binlevel.csv, pseudobulk_de.csv,
-│                              pseudobulk_obs.csv,   de_top5_dotplot.png
+│                              pseudobulk_obs.csv,   de_top5_dotplot.png,
+│                              pseudobulk_volcano.png
 └── segmentation/              <sample_id>/adata_cells.h5ad,  adata_cells_merged.h5ad  (only if enabled)
 ```
 
@@ -334,6 +335,13 @@ The pipeline therefore gates p-value reporting on
 
 `logfoldchange`, `n_pseudobulks`, and `min_n_per_group` are always
 populated, so effect-size-driven prioritization continues to work.
+
+The `pseudobulk_volcano.png` figure adapts to this gate: in
+**powered** clusters the y-axis is `-log10(pval_adj)` (a standard
+volcano); in **low-power** clusters (the default 2-mice-per-condition
+design) it switches to `|Wilcoxon U|` and the panel title is tagged
+`(low power)`. The x-axis is `log2 fold-change` in both cases, so the
+figure is comparable across regimes for prioritization purposes.
 
 ### Output columns
 
