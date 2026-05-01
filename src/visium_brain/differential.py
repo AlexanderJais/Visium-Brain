@@ -259,17 +259,34 @@ def run(adata: ad.AnnData, cfg: dict[str, Any]) -> dict[str, pd.DataFrame]:
     de_cfg = cfg["differential_expression"]
     out: dict[str, pd.DataFrame] = {}
 
-    out["cluster_markers"] = cluster_markers(adata, groupby="leiden", method=de_cfg.get("method", "wilcoxon"))
+    # Single cluster key for every DE flavor. When hierarchical annotation
+    # has run, the pipeline promotes cell_type_l2 into cell_type, so this
+    # naturally selects L2; otherwise it picks up L1 cell_type or falls
+    # back to leiden. Previously cluster_markers was pinned to "leiden"
+    # (== L1 alias) while condition_de / pseudobulk_de used cell_type
+    # (L2 after hierarchical), producing DE outputs at two different
+    # granularities.
+    cluster_key = "cell_type" if "cell_type" in adata.obs else "leiden"
+    method = de_cfg.get("method", "wilcoxon")
+
+    out["cluster_markers"] = cluster_markers(adata, groupby=cluster_key, method=method)
+    # If hierarchical L1->L2 ran, also dump L1 markers so users get both
+    # granularities side by side without having to re-run. cell_type_l1
+    # is preserved by run_cluster_annotate even after the L2 promotion.
+    if "cell_type_l1" in adata.obs and "cell_type_l2" in adata.obs:
+        out["cluster_markers_l1"] = cluster_markers(
+            adata, groupby="cell_type_l1", method=method
+        )
+
     out["condition_de_binlevel"] = condition_de(
         adata,
         groupby=de_cfg.get("groupby", "condition"),
         reference=de_cfg.get("reference", "control"),
-        method=de_cfg.get("method", "wilcoxon"),
-        cluster_key="cell_type" if "cell_type" in adata.obs else "leiden",
+        method=method,
+        cluster_key=cluster_key,
     )
 
     if de_cfg.get("pseudobulk", True):
-        cluster_key = "cell_type" if "cell_type" in adata.obs else "leiden"
         pb = make_pseudobulk(
             adata,
             sample_key="sample_id",
