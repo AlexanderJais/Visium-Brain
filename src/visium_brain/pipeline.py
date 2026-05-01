@@ -115,10 +115,16 @@ def _cluster_annotate_with_sketch(adata: ad.AnnData, cfg: dict[str, Any]) -> ad.
     adata.obs["leiden"] = adata.obs["leiden_l1"]
     adata.obs["cell_type"] = adata.obs["cell_type_l1"]
 
-    # Carry the sketch UMAP through so it can still be plotted.
+    # Carry the sketch UMAP through so it can still be plotted. We
+    # populate both X_umap (so sc.pl.umap and plotting.umap_overview
+    # work without requiring a second full-data UMAP pass) and
+    # X_umap_sketch (an explicitly named copy, so it is obvious from
+    # the obsm keys that the embedding was computed on the sketch and
+    # NaN-padded to the full bin set, not run on every bin).
     if "X_umap" in sub.obsm:
         full_umap = np.full((adata.n_obs, sub.obsm["X_umap"].shape[1]), np.nan)
         full_umap[idx] = sub.obsm["X_umap"]
+        adata.obsm["X_umap"] = full_umap
         adata.obsm["X_umap_sketch"] = full_umap
     if "cluster_marker_scores" in sub.uns:
         adata.uns["l1_marker_scores"] = sub.uns["cluster_marker_scores"]

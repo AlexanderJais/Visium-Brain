@@ -218,7 +218,11 @@ def pseudobulk_de(
 
     frames = []
     for c in pb2.obs[cluster_key].unique():
-        sub = pb2[pb2.obs[cluster_key] == c]
+        # Materialize the slice before sc.tl.rank_genes_groups: see the
+        # matching note in condition_de. Handing rank_genes_groups a
+        # view triggers ImplicitModificationWarning on recent scanpy and
+        # on older versions silently writes uns into a transient copy.
+        sub = pb2[pb2.obs[cluster_key] == c].copy()
         if sub.obs[condition_key].nunique() < 2:
             continue
         # Per-condition pseudobulk counts in this cluster. The Wilcoxon
