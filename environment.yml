@@ -25,6 +25,9 @@ dependencies:
       - anndata>=0.10.0
       - harmonypy>=0.0.10
       - squidpy>=1.5.0
-      - spatialdata>=0.2.0
-      - spatialdata-io>=0.1.5
-      - celltypist>=1.6.0
+      # Optional extras (spatialdata, celltypist, scvi-tools, bin2cell)
+      # are NOT installed here -- pyproject.toml declares them under
+      # [project.optional-dependencies] so users can opt in via
+      # `pip install -e ".[spatialdata]"` etc. Adding them at the env
+      # layer caused them to be installed unconditionally, contradicting
+      # the README's "optional extras" table.

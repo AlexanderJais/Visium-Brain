@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 import anndata as ad
@@ -29,7 +28,7 @@ logger = logging.getLogger(__name__)
 def _flag_genes(adata: ad.AnnData, mito_prefix: str, hb_prefix: str) -> None:
     names = adata.var_names.astype(str)
     adata.var["mt"] = names.str.startswith(mito_prefix)
-    adata.var["hb"] = names.str.contains(re.compile(hb_prefix))
+    adata.var["hb"] = names.str.contains(hb_prefix, regex=True)
     adata.var["ribo"] = names.str.startswith(("Rps", "Rpl"))
 
 
