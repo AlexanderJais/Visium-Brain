@@ -92,12 +92,21 @@ def spatial_per_sample(
 
 
 def neighborhood_heatmap(matrix, out_dir: Path, dpi: int = 200, name: str = "nhood_enrichment") -> Path:
-    fig, ax = plt.subplots(figsize=(8, 7))
+    # Scale figure size and tick-label font to category count: with
+    # hierarchical L1->L2 the matrix can be 30-50 cell types per side,
+    # at which point the previous fixed (8, 7) figure ran tick labels
+    # into each other.
+    n = matrix.shape[0]
+    side = max(7.0, 0.35 * n + 2.0)
+    fontsize = max(6, min(10, int(round(200.0 / max(n, 1)))))
+    fig, ax = plt.subplots(figsize=(side + 1.0, side))  # extra width for colorbar
     sns.heatmap(matrix, cmap="vlag", center=0, ax=ax, square=True, cbar_kws={"label": "z-score"})
     ax.set_title("Neighborhood enrichment")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right", fontsize=fontsize)
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=fontsize)
     path = out_dir / f"{name}.png"
     plt.savefig(path, dpi=dpi, bbox_inches="tight")
-    plt.close()
+    plt.close(fig)
     return path
 
 
