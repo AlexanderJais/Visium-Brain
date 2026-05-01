@@ -160,7 +160,7 @@ visium-brain segment          # bin2cell nuclear segmentation on 2 µm bins
 | 2 | Normalize / HVG / PCA / integrate | `preprocessing`, `integration` | `03_integration/adata_integrated.h5ad` |
 | 3 | Cluster + annotate (sketch + hierarchical) | `sketch`, `clustering`, `annotation`, `hierarchical` | `05_annotation/adata_annotated.h5ad`, UMAP, spatial maps for L1 + L2 |
 | 4 | Spatial analyses | `spatial` | `06_spatial/morans_i.csv`, `nhood_enrichment.png` |
-| 5 | Differential expression | `differential` | `07_differential/cluster_markers.csv`, `condition_de_binlevel.csv`, `pseudobulk_de.csv` |
+| 5 | Differential expression | `differential` | `07_differential/cluster_markers.csv`, `cluster_markers_l1.csv` (hierarchical only), `condition_de_binlevel.csv`, `pseudobulk_de.csv` |
 
 ```
 results/
@@ -171,7 +171,10 @@ results/
 │                              markers_leiden_l1.csv, cluster_labels.yaml,
 │                              l2_marker_scores_<L1>.csv
 ├── 06_spatial/                adata_spatial.h5ad,   morans_i.csv, nhood_enrichment.png
-├── 07_differential/           adata_final.h5ad,     *_de.csv, de_top5_dotplot.png
+├── 07_differential/           adata_final.h5ad,     cluster_markers.csv,
+│                              cluster_markers_l1.csv (when hierarchical),
+│                              condition_de_binlevel.csv, pseudobulk_de.csv,
+│                              pseudobulk_obs.csv,   de_top5_dotplot.png
 └── segmentation/              <sample_id>/adata_cells.h5ad,  adata_cells_merged.h5ad  (only if enabled)
 ```
 
@@ -279,6 +282,13 @@ cell-level AnnData.
   paper analyses one source and skips integration. Set
   `integration.method: scvi` for stronger correction or `none` to
   match the paper exactly.
+- **Sketch UMAP.** With `sketch.enabled: true` (the default), UMAP is
+  computed on the sketch only and projected back to every bin by
+  filling NaN for non-sketched rows. Both `obsm['X_umap']` and a
+  self-documenting `obsm['X_umap_sketch']` alias are populated, so
+  `sc.pl.umap` works out of the box but the obsm keys make the
+  sketch origin explicit. To get a UMAP on every bin, set
+  `sketch.enabled: false`.
 - **Random seed.** Every stochastic step (sketch, neighbors, UMAP,
   Leiden, scVI) reads `project.random_seed`. Reproducible by default.
 
@@ -366,6 +376,19 @@ purely for fast exploratory ranking and is named
 `condition_de_binlevel.csv` to make this explicit. **Do not interpret
 its p-values.** Use it to look for candidate genes; confirm with
 pseudobulk effect sizes (and a parametric model when warranted).
+
+### `pseudobulk_min_cells` and L2 subtypes
+
+With `annotation.hierarchical: true`, pseudobulk DE keys off
+`cell_type` (the L2 label after L1→L2 promotion). Many L2 subtypes
+have far fewer bins per (sample × cluster) than L1 cell types, so the
+default `pseudobulk_min_cells: 25` will silently drop more groups, and
+in extreme cases every group falls below threshold and
+`make_pseudobulk` raises *"No pseudobulk groups passed the min_cells
+threshold."* If that happens, either lower `pseudobulk_min_cells` or
+turn off hierarchical for the DE stage by re-running `visium-brain de`
+on an `adata_spatial.h5ad` whose `cell_type` you have set back to
+`cell_type_l1` (the column is preserved through the cluster stage).
 
 ---
 

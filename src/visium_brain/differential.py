@@ -13,6 +13,12 @@ counts across bins per (sample, cluster), then test condition effects
 * :func:`make_pseudobulk` + :func:`pseudobulk_de` - the
   replication-correct path.
 
+The :func:`run` orchestrator takes a single ``cluster_key`` for every
+flavor (``cell_type`` if present, else ``leiden``); when hierarchical
+L1->L2 has run, ``cell_type`` is the L2 label, so the bundle reports
+DE at L2 by default and additionally emits an L1-keyed
+``cluster_markers_l1`` table for side-by-side comparison.
+
 **Important caveat on `pseudobulk_de` p-values.** The Wilcoxon
 rank-sum test has a hard lower bound on its achievable p-value that
 is determined entirely by group sizes:
