@@ -88,8 +88,13 @@ def morans_i(adata: ad.AnnData, n_genes: int = 200) -> pd.DataFrame:
     import squidpy as sq
 
     if "highly_variable" in adata.var:
-        hv = adata.var.sort_values("highly_variable_rank") if "highly_variable_rank" in adata.var \
-            else adata.var[adata.var["highly_variable"]]
+        # Filter to HVGs first, then sort by rank if available. Previously
+        # the seurat_v3 path sorted the *full* var by highly_variable_rank
+        # (NaN on non-HVGs) and relied on NaN-last sort order to push the
+        # right rows to the top -- correct in practice, but accidental.
+        hv = adata.var[adata.var["highly_variable"]]
+        if "highly_variable_rank" in hv.columns:
+            hv = hv.sort_values("highly_variable_rank")
         genes = hv.index.tolist()[:n_genes]
     else:
         genes = adata.var_names[:n_genes].tolist()
