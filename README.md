@@ -167,8 +167,11 @@ results/
 ├── 01_qc/                     adata_qc.h5ad,        qc_violins.png, qc_summary.csv
 ├── 03_integration/            adata_integrated.h5ad
 ├── 04_clusters/               umap_overview_sketch.png (or umap_overview.png
-│                              when sketch.enabled: false), spatial_leiden_l1_*.png
-├── 05_annotation/             adata_annotated.h5ad, spatial_cell_type_*.png,
+│                              when sketch.enabled: false),
+│                              spatial_leiden_l1_<condition>_<sample_id>.png
+├── 05_annotation/             adata_annotated.h5ad,
+│                              spatial_cell_type_l1_<condition>_<sample_id>.png,
+│                              spatial_cell_type_l2_<condition>_<sample_id>.png,
 │                              markers_leiden_l1.csv, cluster_labels.yaml,
 │                              l2_marker_scores_<L1>.csv
 ├── 06_spatial/                adata_spatial.h5ad,   morans_i.csv, nhood_enrichment.png

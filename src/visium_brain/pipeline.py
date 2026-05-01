@@ -155,7 +155,10 @@ def run_cluster_annotate(cfg: dict[str, Any], adata: ad.AnnData | None = None) -
         adata.obs["cell_type"] = adata.obs["cell_type_l2"]
         if "l2_marker_scores" in adata.uns:
             for l1, df in adata.uns["l2_marker_scores"].items():
-                df.to_csv(paths["annotation"] / f"l2_marker_scores_{l1}.csv", index=False)
+                df.to_csv(
+                    paths["annotation"] / f"l2_marker_scores_{l1}.csv",
+                    index=False, float_format="%.4g",
+                )
 
     plotting.umap_overview(adata, paths["clusters"], dpi=cfg["plotting"]["dpi"])
     plotting.spatial_per_sample(
@@ -181,7 +184,7 @@ def run_spatial(cfg: dict[str, Any], adata: ad.AnnData | None = None) -> ad.AnnD
         adata = io.read_h5ad(paths["annotation"] / "adata_annotated.h5ad")
     results = spatial.run(adata, cfg)
     for name, df in results.items():
-        df.to_csv(paths["spatial"] / f"{name}.csv")
+        df.to_csv(paths["spatial"] / f"{name}.csv", float_format="%.4g")
     if "neighborhood_enrichment" in results:
         plotting.neighborhood_heatmap(
             results["neighborhood_enrichment"], paths["spatial"], dpi=cfg["plotting"]["dpi"]
@@ -196,7 +199,7 @@ def run_differential(cfg: dict[str, Any], adata: ad.AnnData | None = None) -> ad
         adata = io.read_h5ad(paths["spatial"] / "adata_spatial.h5ad")
     results = differential.run(adata, cfg)
     for name, df in results.items():
-        df.to_csv(paths["de"] / f"{name}.csv", index=False)
+        df.to_csv(paths["de"] / f"{name}.csv", index=False, float_format="%.4g")
     if "condition_de_binlevel" in results:
         # Prefer L1 as the dotplot's row axis when hierarchical L1->L2
         # has run: cell_type is the L2 label (~30-50 categories) which

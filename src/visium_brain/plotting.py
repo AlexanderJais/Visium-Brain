@@ -78,7 +78,7 @@ def qc_violins(adata: ad.AnnData, out_dir: Path, dpi: int = 200) -> Path:
 
 def qc_summary_table(summary, out_dir: Path) -> Path:
     path = out_dir / "qc_summary.csv"
-    summary.to_csv(path, index=False)
+    summary.to_csv(path, index=False, float_format="%.4g")
     return path
 
 
@@ -120,6 +120,16 @@ def spatial_per_sample(
     # category-to-color mapping -- the same L2 cell type is plotted in
     # the same color across ctrl_m1, ctrl_m2, trt_m3, trt_m4.
     _ensure_categorical_palette(adata, color)
+    # Map sample_id -> condition once. Filenames include the condition
+    # so figures stay self-describing even when sample_ids are generic
+    # (S1, S2, ...) and the user later loses track of which is which.
+    if "condition" in adata.obs:
+        cond_map = (
+            adata.obs.drop_duplicates("sample_id")
+            .set_index("sample_id")["condition"].astype(str).to_dict()
+        )
+    else:
+        cond_map = {}
     paths = []
     for sid in adata.obs["sample_id"].cat.categories:
         sub = adata[adata.obs["sample_id"] == sid].copy()
@@ -131,7 +141,9 @@ def spatial_per_sample(
             spot_size=spot_size,
             show=False,
         )
-        path = out_dir / f"spatial_{color}_{sid}.png"
+        cond = cond_map.get(sid, "")
+        prefix = f"spatial_{color}_{cond}_{sid}" if cond else f"spatial_{color}_{sid}"
+        path = out_dir / f"{prefix}.png"
         plt.savefig(path, dpi=dpi, bbox_inches="tight")
         plt.close()
         paths.append(path)

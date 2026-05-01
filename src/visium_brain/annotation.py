@@ -148,7 +148,9 @@ def export_marker_tables(
             )
     df = pd.DataFrame(rows)
     csv_path = out_dir / f"markers_{cluster_key}.csv"
-    df.to_csv(csv_path, index=False)
+    # %.4g keeps logfoldchange / pval_adj / score readable while
+    # shrinking the file vs pandas' default ~12 sig figs.
+    df.to_csv(csv_path, index=False, float_format="%.4g")
 
     label_template = {str(g): "TBD" for g in groups}
     yaml_path = out_dir / "cluster_labels.yaml"
