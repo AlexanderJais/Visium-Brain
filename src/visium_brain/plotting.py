@@ -9,6 +9,7 @@ from typing import Iterable
 import anndata as ad
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import scanpy as sc
 import seaborn as sns
 
@@ -124,10 +125,15 @@ def spatial_per_sample(
     # so figures stay self-describing even when sample_ids are generic
     # (S1, S2, ...) and the user later loses track of which is which.
     if "condition" in adata.obs:
-        cond_map = (
+        # dropna here so NaN condition rows (rare, but possible if the
+        # user's config is incomplete) don't end up as the literal
+        # string "nan" in the filename when astype(str) coerces them.
+        cond_series = (
             adata.obs.drop_duplicates("sample_id")
-            .set_index("sample_id")["condition"].astype(str).to_dict()
+            .set_index("sample_id")["condition"]
+            .dropna()
         )
+        cond_map = cond_series.astype(str).to_dict()
     else:
         cond_map = {}
     paths = []
@@ -203,14 +209,17 @@ def save_pseudobulk_volcano(
     nrows = (len(clusters) + ncols - 1) // ncols
     fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.5 * nrows), squeeze=False)
 
-    import pandas as _pd
-
     for ax, c in zip(axes.flat, clusters):
         sub = de_df[de_df["cluster"] == c]
         if sub.empty:
             ax.set_visible(False)
             continue
-        low_power = bool(sub["low_power"].iloc[0]) if "low_power" in sub.columns else False
+        # Guard against NaN low_power: bool(NaN) is True, which would
+        # silently mislabel the panel. pseudobulk_de always populates
+        # this with a real bool, but be defensive against hand-built
+        # frames or future schema drift.
+        low_power_raw = sub["low_power"].iloc[0] if "low_power" in sub.columns else False
+        low_power = bool(low_power_raw) if pd.notna(low_power_raw) else False
 
         x = sub["logfoldchange"].to_numpy()
         if not low_power and "pval_adj" in sub.columns and sub["pval_adj"].notna().any():
@@ -229,7 +238,7 @@ def save_pseudobulk_volcano(
 
         # Label top |lfc| hits.
         top_idx = sub["logfoldchange"].abs().nlargest(n_label).index
-        y_series = _pd.Series(y, index=sub.index)
+        y_series = pd.Series(y, index=sub.index)
         for i in top_idx:
             ax.annotate(
                 str(sub.loc[i, "gene"]),
@@ -271,8 +280,13 @@ def save_top_de_heatmap(
         ["cluster", "pval_adj", "score"], ascending=[True, True, False]
     )
     top = ranked.groupby("cluster").head(n_top)["gene"]
-    # Deduplicate while preserving rank order (every cluster gets at
-    # least its #1 marker before any cluster gets its #2, then so on).
+    # ranked is sorted by cluster first, so head(n_top) emits cluster A's
+    # top n_top, then cluster B's, and so on. drop_duplicates keeps each
+    # gene at its first appearance, so a gene that ranks well in
+    # multiple clusters is attributed to the alphabetically-first one
+    # and later clusters effectively contribute fewer unique columns.
+    # Acceptable here -- the dotplot is a summary, not a per-cluster
+    # exhaustive marker table (those live in cluster_markers*.csv).
     top = top.drop_duplicates().tolist()
     top = [g for g in top if g in adata.var_names][:max_genes]
     if not top:
